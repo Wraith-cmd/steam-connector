@@ -8,7 +8,7 @@
 
 import { createMcpHandler } from "mcp-handler";
 import { getSecretFromRequest, isValidSecret, MIN_SECRET_LENGTH } from "../src/secret.js";
-import { registerTools } from "../src/server.js";
+import { registerTools } from "../src/tools.js";
 
 const mcpHandler = createMcpHandler(registerTools, {
   serverInfo: { name: "steam-connector", version: "1.0.0" },
