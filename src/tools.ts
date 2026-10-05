@@ -7,7 +7,16 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { FriendlyError, toToolError } from "./errors.js";
 import { type AppKinds, classifyApps } from "./classify.js";
-import { cleanText, decodeEntities, formatHours, gameName, lastPlayedLabel, minutesToHours, unixToDate } from "./format.js";
+import {
+  cleanText,
+  decodeEntities,
+  gameName,
+  isBrieflyPlayed,
+  lastPlayedLabel,
+  minutesToHours,
+  preciseHours,
+  unixToDate,
+} from "./format.js";
 import { DECK_LABELS, handheldVerdict } from "./handheld.js";
 import { mapLimited } from "./http.js";
 import { resolveProfile } from "./profile.js";
@@ -62,9 +71,10 @@ export function registerTools(server: McpServer): void {
       description:
         "List every game in a Steam library with total hours, hours in the last 2 weeks, and the last played " +
         "date, sorted by total hours (most played first). Also reports how many games have never been played. " +
-        'Hours of "<0.1" mean the game was opened only briefly. last_played is a date, "unknown" (played, but ' +
-        'Steam has no date), or "never". Software such as Soundpad or Wallpaper Engine is left out unless ' +
-        "include_software is true. Playtests are marked is_playtest. " +
+        "Hours are numbers; briefly_played: true marks games opened for only a few minutes. " +
+        'last_played is a date, "unknown" (played, but Steam has no date), or "never". Software such as ' +
+        "Soundpad or Wallpaper Engine is left out unless include_software is true; software_count always says " +
+        "how many software apps the library has. Playtests are marked is_playtest. " +
         "Use this to understand someone's taste and backlog before recommending what to play.",
       inputSchema: z.object({
         profile: profileInput,
@@ -108,7 +118,8 @@ export function registerTools(server: McpServer): void {
           game_count: visible.length,
           never_played_count: list.filter((game) => game.last_played === "never").length,
           total_hours: minutesToHours(totalMinutes),
-          ...(!include_software && { software_hidden_count: games.length - visible.length }),
+          software_count: games.filter((game) => kinds.isSoftware(game.appid)).length,
+          software_included: include_software === true,
           ...(!kinds.complete && {
             note: "Steam's app-type lookup failed, so only well-known software was detected.",
           }),
@@ -145,9 +156,10 @@ export function registerTools(server: McpServer): void {
             return {
               name,
               appid: game.appid,
-              // Every game here was played in the last 2 weeks, so 0 minutes means "opened briefly".
-              hours_last_2_weeks: formatHours(game.playtime_2weeks, true),
-              hours_total: formatHours(game.playtime_forever, true),
+              hours_last_2_weeks: preciseHours(game.playtime_2weeks),
+              hours_total: preciseHours(game.playtime_forever),
+              // Every game here was played in the last 2 weeks, so it was opened even if Steam recorded 0 minutes.
+              ...(isBrieflyPlayed(game.playtime_forever, true) && { briefly_played: true as const }),
               ...appFlags(game.appid, name, kinds),
             };
           });
@@ -467,8 +479,8 @@ export function registerTools(server: McpServer): void {
         const shared = pairs.map(({ yours, theirs, name }) => ({
           name,
           appid: yours.appid,
-          your_hours: formatHours(yours.playtime_forever, wasOpened(yours)),
-          friend_hours: formatHours(theirs.playtime_forever, wasOpened(theirs)),
+          your_hours: preciseHours(yours.playtime_forever),
+          friend_hours: preciseHours(theirs.playtime_forever),
           ...appFlags(yours.appid, name, kinds),
         }));
         const shown = shared.slice(0, limit ?? 50);
@@ -496,9 +508,10 @@ function describeGame(game: OwnedGame, kinds: AppKinds) {
   return {
     name,
     appid: game.appid,
-    hours_total: formatHours(game.playtime_forever, lastPlayed !== "never"),
-    hours_last_2_weeks: formatHours(game.playtime_2weeks),
+    hours_total: preciseHours(game.playtime_forever),
+    hours_last_2_weeks: preciseHours(game.playtime_2weeks),
     last_played: lastPlayed,
+    ...(isBrieflyPlayed(game.playtime_forever, lastPlayed !== "never") && { briefly_played: true as const }),
     ...appFlags(game.appid, name, kinds),
   };
 }
@@ -506,11 +519,6 @@ function describeGame(game: OwnedGame, kinds: AppKinds) {
 /** The Steam Deck rating, or "Unknown" if it can't be fetched (it comes from an unofficial endpoint). */
 function deckRatingOrUnknown(appid: number): Promise<DeckRating> {
   return getDeckRating(appid).catch(() => ({ category: 0 as const, notes: ["Steam Deck rating unavailable right now"] }));
-}
-
-/** True if Steam has any sign the game was ever launched. */
-function wasOpened(game: OwnedGame): boolean {
-  return lastPlayedLabel(game.playtime_forever, game.rtime_last_played) !== "never";
 }
 
 /** `is_software` / `is_playtest` flags, included only when true to keep output short. */
