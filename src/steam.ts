@@ -2,6 +2,7 @@
 // Store calls (prices, reviews, Steam Deck ratings) live in store.ts.
 
 import { FriendlyError } from "./errors.js";
+import { cleanText } from "./format.js";
 import { fetchJson } from "./http.js";
 
 const WEB_API = "https://api.steampowered.com";
@@ -47,7 +48,8 @@ export type PlayerAchievement = {
 // ---------- Low-level helpers ----------
 
 function getApiKey(): string {
-  const key = process.env.STEAM_API_KEY;
+  // Trim: a key pasted into Vercel with a trailing space or line break would otherwise be rejected.
+  const key = process.env.STEAM_API_KEY?.trim();
   if (!key) {
     throw new FriendlyError(
       "This server is missing its STEAM_API_KEY setting. The owner needs to add it in Vercel " +
@@ -144,7 +146,7 @@ export async function getPlayerAchievements(steamId: string, appid: number): Pro
   if (/not public/i.test(error)) return { kind: "private" };
   if (/no stats|no achievements/i.test(error)) return { kind: "no_achievements" };
   throw new FriendlyError(
-    `Steam couldn't load achievements for appid ${appid}` + (error ? ` ("${error}").` : ".") +
+    `Steam couldn't load achievements for appid ${appid}` + (error ? ` ("${cleanText(error, 100)}").` : ".") +
       " Check that the player owns this game.",
   );
 }

@@ -9,7 +9,7 @@ import { clearStoreCaches } from "../src/store.js";
 import { MESSY_STEAM_ID, MY_STEAM_ID } from "./fixtures.js";
 import { mockSteam, TEST_API_KEY } from "./mockSteam.js";
 
-const SECRET = "test-secret-0123456789abcdef";
+const SECRET = "test-secret-0123456789abcdef-0123456789";
 
 beforeEach(() => {
   vi.stubEnv("MCP_SECRET", SECRET);
@@ -71,9 +71,15 @@ describe("format helpers", () => {
     expect(cleanText("THE GAME OF LIFE ")).toBe("THE GAME OF LIFE");
     expect(cleanText("Yu-Gi-Oh!  Master Duel")).toBe("Yu-Gi-Oh! Master Duel");
     expect(cleanText("Line\nbreak\tand\u0007bell")).toBe("Line break andbell");
-    expect(cleanText("zero​width ‮flipped")).toBe("zerowidth flipped");
+    expect(cleanText("zero\u200Bwidth \u202Eflipped")).toBe("zerowidth flipped");
     expect(cleanText("hidden\u{E0049}\u{E0047}tag")).toBe("hiddentag");
     expect(gameName("   ", 42)).toBe("App 42");
+  });
+
+  it("caps the length of text that comes from other people", () => {
+    expect(gameName("x".repeat(500), 1)).toHaveLength(100);
+    expect(gameName("x".repeat(500), 1).endsWith("…")).toBe(true);
+    expect(cleanText("y".repeat(1000))).toHaveLength(300);
   });
 });
 

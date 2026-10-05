@@ -44,7 +44,7 @@ All tools are read-only. Nothing can change your Steam account.
                          (your Vercel deployment)                     └─▶  Steam Store API
 ```
 
-The secret in the URL acts as a password. Anyone calling the URL without the right secret gets a plain **404 Not Found**, as if nothing were there.
+The secret in the URL acts as a password. Anyone calling the URL without the right secret gets a plain **404 Not Found** and no data.
 
 ---
 
@@ -93,10 +93,12 @@ Changes can take a few minutes to reach the API.
 The secret becomes part of your connector URL, so it needs to be long, random, and use only letters and numbers. Use one of these:
 
 - **Mac or Linux:** run `openssl rand -hex 32` in a terminal.
-- **Windows (PowerShell):** run `-join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Max 256) })`
+- **Windows (PowerShell):** run `$b = [byte[]]::new(32); [Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($b); -join ($b | ForEach-Object { $_.ToString('x2') })`
 - **Password manager:** generate a 40+ character password with **letters and numbers only**.
 
-It must be at least 16 characters, or the server refuses every request. This is your `MCP_SECRET`.
+Don't use the example values from this README or `.env.example`; the server refuses them because anyone can read them.
+
+It must be at least 32 characters, using only letters, numbers, `-` and `_`, or the server refuses every request. This is your `MCP_SECRET`.
 
 ### 5. Deploy to Vercel
 
@@ -123,7 +125,7 @@ For example:
 https://steam-connector-abc123.vercel.app/mcp/3f9c1e7a0b5d4c2e8f6a9b1c3d5e7f9a0b2c4d6e8f0a1b3c5d7e9f1a3b5c7d9
 ```
 
-**Quick check:** open the URL in your browser.
+**Quick check:** open the URL in a **private/incognito** browser tab, so the secret isn't saved in your browsing history.
 
 - **A short error mentioning "Method not allowed"** means it's working. Browsers send the wrong kind of request, but the secret was accepted.
 - **"404 Not Found"** means the domain or secret is wrong. See [Troubleshooting](#troubleshooting).
@@ -170,7 +172,7 @@ To add one, open your Vercel project → **Settings → Environment Variables**,
 
 | Problem | What to try |
 | --- | --- |
-| Browser or Claude gets **404 Not Found** | Check the domain and secret. The URL must be exactly `https://<domain>/mcp/<secret>`, with no extra slash or spaces. `MCP_SECRET` must be at least 16 characters. If you changed `MCP_SECRET`, redeploy (Vercel → **Deployments** → ⋯ → **Redeploy**). |
+| Browser or Claude gets **404 Not Found** | Check the domain and secret. The URL must be exactly `https://<domain>/mcp/<secret>`, with no extra slash or spaces. `MCP_SECRET` must be at least 32 characters (letters, numbers, `-`, `_`) and not an example value. Vercel → **Logs** shows a line starting `Refused request with 404:` that names the exact reason. If you changed `MCP_SECRET`, redeploy (Vercel → **Deployments** → ⋯ → **Redeploy**). |
 | Claude can't connect, or shows a sign-in or registration error | Make sure you used the production domain, not a preview URL. Leave the OAuth fields blank. Check that the browser test in step 6 shows "Method not allowed". |
 | "game details are private" | Redo [step 3](#3-make-your-game-details-public) and wait a few minutes. Ask Claude to run `get_player_summary` to check. |
 | Every game shows 0 hours | Uncheck "Always keep my total playtime private" in your Steam privacy settings. |
@@ -180,11 +182,15 @@ To add one, open your Vercel project → **Settings → Environment Variables**,
 
 ## Security notes
 
-- **Your connector URL is a password.** Anyone with it can use your API key to read public Steam data. Don't share it or post it publicly.
-- **To change it,** set a new `MCP_SECRET` in Vercel, redeploy, and update the URL in claude.ai.
-- The API key and secret are read from environment variables and are never included in tool output or error messages. The code doesn't log them either.
-- Vercel's own request logs, visible only to you in your dashboard, record request paths. Because the secret is part of the path, it appears there.
-- Secrets live only in Vercel's environment variables. `.env` files are ignored by git, and `.env.example` contains placeholders only.
+- **Your connector URL is a password.** Anyone with it can use your API key through your server, and may be able to read your own library even if your profile is private (Steam can share an account's own data with that account's key). Don't share it, and blur it in screenshots.
+- **To change it,** set a new `MCP_SECRET` in Vercel, redeploy, and update the URL in claude.ai. Do this right away if the URL ever leaks.
+- **Guard your Steam API key.** Scammers who get someone's API key can watch and interfere with their Steam trade offers. If you think yours leaked, revoke it at <https://steamcommunity.com/dev/apikey> and set a new one in Vercel.
+- **Mark both values as Sensitive in Vercel** (Settings → Environment Variables → edit → Sensitive), so they can't be viewed again in the dashboard.
+- The API key and secret are read from environment variables and are never included in tool output or error messages. The code doesn't log them either; refused requests log only the reason and lengths.
+- Vercel's own request logs, visible only to people on your Vercel team, record request paths. Because the secret is part of the path, it appears there.
+- Secrets live only in Vercel's environment variables. `.env` files are ignored by git and by Vercel uploads (`.vercelignore`), and `.env.example` contains placeholders only.
+- **Limits:** each request can run for at most 60 seconds, batched requests are refused, and only `public/robots.txt` is served as a static file.
+- **Text from other people:** game names, descriptions, achievement text and display names are written by Steam users and developers. The server strips invisible characters, caps their length, and tells Claude to treat them as data, not instructions.
 
 ## Run it locally (optional)
 

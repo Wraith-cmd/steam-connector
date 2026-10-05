@@ -17,7 +17,11 @@ export type SteamService = "Web API" | "store";
 export async function fetchJson(url: string, service: SteamService, readBodyOn: number[] = []): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    response = await fetch(url, {
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+      // Web API URLs carry the API key, so never follow a redirect to somewhere else.
+      redirect: service === "Web API" ? "error" : "follow",
+    });
   } catch {
     // Note: we never include `url` in messages because it contains the API key.
     throw new FriendlyError(`Couldn't reach the Steam ${service} (it may be down or slow). Please try again shortly.`);

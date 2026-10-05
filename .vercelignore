@@ -1,0 +1,7 @@
+# Never upload local secrets or dev-only files when deploying with the Vercel CLI.
+.env
+.env.*
+!.env.example
+test/
+coverage/
+*.log
