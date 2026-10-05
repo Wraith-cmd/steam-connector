@@ -1,14 +1,26 @@
-// The four MCP tools Claude can call. Each tool:
+// The MCP tools Claude can call. Each tool:
 //   1. works out which Steam account to use (resolveProfile)
-//   2. asks Steam for data (steam.ts)
+//   2. asks Steam for data (steam.ts for your account, store.ts for the store)
 //   3. returns a tidy JSON summary, or a friendly error message
 
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { FriendlyError, toToolError } from "./errors.js";
 import { decodeEntities, minutesToHours, unixToDate } from "./format.js";
+import { DECK_LABELS, handheldVerdict } from "./handheld.js";
+import { mapLimited } from "./http.js";
 import { resolveProfile } from "./profile.js";
-import { type AppDetails, getAppDetails, getOwnedGames, getPlayerSummary, getRecentlyPlayedGames } from "./steam.js";
+import {
+  getGlobalAchievementPercentages,
+  getOwnedGames,
+  getPlayerAchievements,
+  getPlayerSummary,
+  getRecentlyPlayedGames,
+  getWishlist,
+} from "./steam.js";
+import { type AppDetails, getAppDetails, getDeckRating, getReviewSummary } from "./store.js";
+
+const appidInput = z.coerce.number().int().positive();
 
 const profileInput = z
   .string()
@@ -130,9 +142,10 @@ export function registerTools(server: McpServer): void {
       title: "Get game details",
       description:
         "Look up a game's Steam store page by appid: genres, categories (like Single-player or Co-op), " +
-        "short description, release date, and current price. Get appids from get_owned_games or get_recently_played.",
+        "short description, release date, current price, user review score, and controller support. " +
+        "Get appids from get_owned_games or get_recently_played.",
       inputSchema: z.object({
-        appid: z.coerce.number().int().positive().describe("The game's Steam appid, for example 620 for Portal 2."),
+        appid: appidInput.describe("The game's Steam appid, for example 620 for Portal 2."),
       }),
       annotations: readOnly,
     },
@@ -146,6 +159,9 @@ export function registerTools(server: McpServer): void {
           );
         }
 
+        // Reviews are a bonus: if that lookup fails, still return the rest of the details.
+        const reviews = await getReviewSummary(appid).catch(() => undefined);
+
         return jsonResult({
           appid: details.steam_appid,
           name: details.name,
@@ -156,6 +172,8 @@ export function registerTools(server: McpServer): void {
           release_date: details.release_date?.date || "unknown",
           coming_soon: details.release_date?.coming_soon ?? false,
           price: describePrice(details),
+          reviews: reviews === undefined ? "unavailable right now" : (reviews ?? "no reviews yet"),
+          controller_support: details.controller_support ?? "none listed",
           store_url: `https://store.steampowered.com/app/${details.steam_appid}/`,
         });
       } catch (error) {
@@ -194,6 +212,237 @@ export function registerTools(server: McpServer): void {
           profile_public: profilePublic,
           game_details_public: gameDetailsPublic,
           ...(!gameDetailsPublic && { how_to_fix: PRIVATE_GAMES_MESSAGE }),
+        });
+      } catch (error) {
+        return toToolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "check_handheld_compatibility",
+    {
+      title: "Check handheld compatibility",
+      description:
+        "Check how well games play on a handheld gaming PC such as the ROG Ally, Legion Go, MSI Claw, or Steam Deck. " +
+        "Combines Valve's Steam Deck rating with the game's controller support, and explains the verdict. " +
+        "Checks up to 10 appids per call; get appids from get_owned_games first to check a library.",
+      inputSchema: z.object({
+        appids: z.array(appidInput).min(1).max(10).describe("Up to 10 Steam appids to check."),
+      }),
+      annotations: readOnly,
+    },
+    async ({ appids }) => {
+      try {
+        const games = await mapLimited(appids, 5, async (appid) => {
+          const details = await getAppDetails(appid);
+          if (!details) return { appid, error: "No Steam store page for this appid." };
+
+          // The Steam Deck rating comes from an unofficial endpoint; if it fails, judge on controller support alone.
+          const deck = await getDeckRating(appid).catch(() => ({
+            category: 0 as const,
+            notes: ["Steam Deck rating unavailable right now"],
+          }));
+          const controller = details.controller_support ?? "none";
+          const verdict = handheldVerdict(deck, controller, details.platforms?.windows ?? true);
+          return {
+            appid,
+            name: details.name,
+            handheld_rating: verdict.rating,
+            explanation: verdict.explanation,
+            steam_deck_rating: DECK_LABELS[deck.category],
+            controller_support: controller,
+            steam_deck_notes: deck.notes,
+          };
+        });
+        return jsonResult({ games });
+      } catch (error) {
+        return toToolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_achievement_progress",
+    {
+      title: "Get achievement progress",
+      description:
+        "Show how close a player is to 100% achievements in one game: unlocked vs total, and the locked " +
+        "achievements sorted easiest first (by how many players worldwide have them). " +
+        "Use it to plan a 100% run or to find games that are nearly complete.",
+      inputSchema: z.object({
+        appid: appidInput.describe("The game's Steam appid."),
+        profile: profileInput,
+      }),
+      annotations: readOnly,
+    },
+    async ({ appid, profile }) => {
+      try {
+        const steamId = await resolveProfile(profile);
+        const result = await getPlayerAchievements(steamId, appid);
+        if (result.kind === "private") throw new FriendlyError(PRIVATE_GAMES_MESSAGE);
+        if (result.kind === "no_achievements") {
+          throw new FriendlyError(`This game (appid ${appid}) has no Steam achievements to track.`);
+        }
+
+        // Rarity is a bonus: without it, locked achievements just keep Steam's order.
+        const rarity = await getGlobalAchievementPercentages(appid).catch(() => new Map<string, number>());
+        const total = result.achievements.length;
+        const unlocked = result.achievements.filter((achievement) => achievement.achieved === 1).length;
+        const locked = result.achievements
+          .filter((achievement) => achievement.achieved !== 1)
+          .map((achievement) => ({
+            name: achievement.name || achievement.apiname,
+            description: achievement.description || "(hidden achievement)",
+            percent_of_players_who_have_it: rarity.has(achievement.apiname)
+              ? Math.round(rarity.get(achievement.apiname)! * 10) / 10
+              : null,
+          }))
+          .sort((a, b) => (b.percent_of_players_who_have_it ?? -1) - (a.percent_of_players_who_have_it ?? -1));
+
+        return jsonResult({
+          steam_id: steamId,
+          appid,
+          game: result.gameName,
+          unlocked,
+          total,
+          // Round down so 99.96% never shows as 100%.
+          percent_complete: Math.floor((unlocked / total) * 1000) / 10,
+          is_100_percent: unlocked === total,
+          locked_achievements_easiest_first: locked.slice(0, 25),
+          ...(locked.length > 25 && { note: `Showing the 25 easiest of ${locked.length} locked achievements.` }),
+        });
+      } catch (error) {
+        return toToolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_wishlist",
+    {
+      title: "Get wishlist",
+      description:
+        "List the games on a Steam wishlist (top-ranked first) with current prices and discounts. " +
+        "Use on_sale_only to find wishlist games that are on sale right now.",
+      inputSchema: z.object({
+        profile: profileInput,
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .optional()
+          .describe("How many wishlist games to price-check, top-ranked first. Default 20, max 50."),
+        on_sale_only: z.boolean().optional().describe("Only return games that are currently discounted."),
+      }),
+      annotations: readOnly,
+    },
+    async ({ profile, limit, on_sale_only }) => {
+      try {
+        const steamId = await resolveProfile(profile);
+        const items = await getWishlist(steamId);
+        if (items.length === 0) {
+          return jsonResult({
+            steam_id: steamId,
+            wishlist_count: 0,
+            games: [],
+            note: "The wishlist is empty, or the profile's game details are private.",
+          });
+        }
+
+        const ranked = [...items].sort(
+          (a, b) => (a.priority ?? Infinity) - (b.priority ?? Infinity) || (a.date_added ?? 0) - (b.date_added ?? 0),
+        );
+        const checked = ranked.slice(0, limit ?? 20);
+        const games = await mapLimited(checked, 5, async (item) => {
+          const details = await getAppDetails(item.appid);
+          const discount = details?.price_overview?.discount_percent ?? 0;
+          return {
+            name: details?.name ?? `App ${item.appid}`,
+            appid: item.appid,
+            price: details ? describePrice(details) : "Not on the store",
+            on_sale: discount > 0,
+            discount_percent: discount,
+            added_to_wishlist: unixToDate(item.date_added),
+          };
+        });
+
+        return jsonResult({
+          steam_id: steamId,
+          wishlist_count: items.length,
+          checked: checked.length,
+          on_sale_count: games.filter((game) => game.on_sale).length,
+          games: on_sale_only ? games.filter((game) => game.on_sale) : games,
+          ...(items.length > checked.length && {
+            note: `Only the top ${checked.length} of ${items.length} wishlist games were price-checked. Raise limit (max 50) to check more.`,
+          }),
+        });
+      } catch (error) {
+        return toToolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
+    "get_shared_games",
+    {
+      title: "Get shared games",
+      description:
+        "Find games that two players both own, with each player's hours, sorted by combined hours. " +
+        "Great for picking something to play together; then use get_game_details to check which " +
+        "shared games support co-op or online multiplayer.",
+      inputSchema: z.object({
+        friend_profile: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe("The friend's Steam profile: a SteamID64, a steamcommunity.com profile link, or a custom profile name."),
+        profile: profileInput,
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(1000)
+          .optional()
+          .describe("Optional: only return the top N shared games. Default 50."),
+      }),
+      annotations: readOnly,
+    },
+    async ({ friend_profile, profile, limit }) => {
+      try {
+        const [yourId, friendId] = await Promise.all([resolveProfile(profile), resolveProfile(friend_profile)]);
+        if (yourId === friendId) throw new FriendlyError("Those are the same Steam profile. Pick a different friend.");
+
+        const [yourGames, friendGames] = await Promise.all([getOwnedGames(yourId), getOwnedGames(friendId)]);
+        if (yourGames === null) throw new FriendlyError(PRIVATE_GAMES_MESSAGE);
+        if (friendGames === null) {
+          throw new FriendlyError(
+            "Your friend's game details are private, so Steam won't share their games. They need to set " +
+              '"My profile" and "Game details" to Public in their Steam privacy settings.',
+          );
+        }
+
+        const friendHours = new Map(friendGames.map((game) => [game.appid, minutesToHours(game.playtime_forever)]));
+        const shared = yourGames
+          .filter((game) => friendHours.has(game.appid))
+          .map((game) => ({
+            name: game.name ?? `App ${game.appid}`,
+            appid: game.appid,
+            your_hours: minutesToHours(game.playtime_forever),
+            friend_hours: friendHours.get(game.appid)!,
+          }))
+          .sort((a, b) => b.your_hours + b.friend_hours - (a.your_hours + a.friend_hours) || a.name.localeCompare(b.name));
+        const shown = shared.slice(0, limit ?? 50);
+
+        return jsonResult({
+          your_steam_id: yourId,
+          friend_steam_id: friendId,
+          your_game_count: yourGames.length,
+          friend_game_count: friendGames.length,
+          shared_count: shared.length,
+          showing: shown.length,
+          games: shown,
         });
       } catch (error) {
         return toToolError(error);

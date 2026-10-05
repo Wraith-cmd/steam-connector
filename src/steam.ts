@@ -1,15 +1,10 @@
-// Everything that talks to Steam lives in this file.
-//
-// Steam has two APIs we use:
-//   - The Web API (api.steampowered.com), which needs STEAM_API_KEY
-//   - The store API (store.steampowered.com), which is public and rate limited
+// Calls to the Steam Web API (api.steampowered.com), which needs STEAM_API_KEY.
+// Store calls (prices, reviews, Steam Deck ratings) live in store.ts.
 
-import { TtlCache } from "./cache.js";
 import { FriendlyError } from "./errors.js";
+import { fetchJson } from "./http.js";
 
 const WEB_API = "https://api.steampowered.com";
-const STORE_API = "https://store.steampowered.com/api";
-const TIMEOUT_MS = 10_000;
 
 // ---------- Shapes of the Steam data we use (Steam sends more, we ignore it) ----------
 
@@ -35,16 +30,18 @@ export type PlayerSummary = {
   communityvisibilitystate: number; // 3 means public, anything else is private
 };
 
-export type AppDetails = {
-  type?: string;
-  name: string;
-  steam_appid: number;
-  is_free?: boolean;
-  short_description?: string;
-  genres?: { description: string }[];
-  categories?: { description: string }[];
-  release_date?: { coming_soon: boolean; date: string };
-  price_overview?: { final_formatted: string; initial_formatted: string; discount_percent: number };
+export type WishlistItem = {
+  appid: number;
+  priority?: number; // the order the player ranked it in
+  date_added?: number; // Unix timestamp
+};
+
+export type PlayerAchievement = {
+  apiname: string;
+  achieved: number; // 1 = unlocked, 0 = locked
+  unlocktime?: number; // Unix timestamp
+  name?: string;
+  description?: string;
 };
 
 // ---------- Low-level helpers ----------
@@ -60,49 +57,10 @@ function getApiKey(): string {
   return key;
 }
 
-/** Two-letter country code for store prices, e.g. "us" or "gb". Defaults to "us". */
-function getCountry(): string {
-  const country = process.env.STEAM_COUNTRY?.trim().toLowerCase();
-  return country && /^[a-z]{2}$/.test(country) ? country : "us";
-}
-
-/** Fetch a URL and parse JSON, turning every kind of failure into a FriendlyError. */
-async function fetchJson(url: string, service: "Web API" | "store"): Promise<unknown> {
-  let response: Response;
-  try {
-    response = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
-  } catch {
-    // Note: we never include `url` in messages because it contains the API key.
-    throw new FriendlyError(`Couldn't reach the Steam ${service} (it may be down or slow). Please try again shortly.`);
-  }
-
-  if (response.status === 429) {
-    throw new FriendlyError(`The Steam ${service} is rate limiting us. Please wait a minute and try again.`);
-  }
-  if ((response.status === 401 || response.status === 403) && service === "Web API") {
-    throw new FriendlyError(
-      "Steam rejected the API key. The server's STEAM_API_KEY is probably wrong or was revoked. " +
-        "Get a new key at https://steamcommunity.com/dev/apikey and update it in Vercel.",
-    );
-  }
-  if (response.status >= 500) {
-    throw new FriendlyError(`The Steam ${service} is having problems right now (HTTP ${response.status}). Please try again later.`);
-  }
-  if (!response.ok) {
-    throw new FriendlyError(`The Steam ${service} returned an unexpected error (HTTP ${response.status}).`);
-  }
-
-  try {
-    return await response.json();
-  } catch {
-    throw new FriendlyError(`The Steam ${service} sent back a response we couldn't read. Please try again shortly.`);
-  }
-}
-
 /** Call a Steam Web API method, e.g. steamApi("IPlayerService/GetOwnedGames/v1", { steamid }). */
-async function steamApi(method: string, params: Record<string, string>): Promise<unknown> {
+async function steamApi(method: string, params: Record<string, string>, readBodyOn: number[] = []): Promise<unknown> {
   const query = new URLSearchParams({ key: getApiKey(), format: "json", ...params });
-  return fetchJson(`${WEB_API}/${method}/?${query}`, "Web API");
+  return fetchJson(`${WEB_API}/${method}/?${query}`, "Web API", readBodyOn);
 }
 
 // ---------- Public functions used by the tools ----------
@@ -151,35 +109,60 @@ export async function getPlayerSummary(steamId: string): Promise<PlayerSummary |
   return data.response?.players?.[0] ?? null;
 }
 
-// Store responses rarely change, so cache them for an hour.
-// We also cache "not found" (null) so repeated bad appids don't hit Steam.
-const appDetailsCache = new TtlCache<AppDetails | null>(60 * 60 * 1000);
-
-/** Store page details for a game. Returns null when no store page exists for the appid. */
-export async function getAppDetails(appid: number): Promise<AppDetails | null> {
-  const country = getCountry();
-  const cacheKey = `${appid}:${country}`;
-  const cached = appDetailsCache.get(cacheKey);
-  if (cached !== undefined) return cached;
-
-  const query = new URLSearchParams({ appids: String(appid), cc: country, l: "english" });
-  const data = (await fetchJson(`${STORE_API}/appdetails?${query}`, "store")) as Record<
-    string,
-    { success?: boolean; data?: AppDetails } | null
-  > | null;
-
-  // The store answers with plain `null` when it is rate limiting us.
-  if (data === null) {
-    throw new FriendlyError("The Steam store is rate limiting us. Please wait a minute and try again.");
-  }
-
-  const entry = data[String(appid)];
-  const details = entry?.success && entry.data ? entry.data : null;
-  appDetailsCache.set(cacheKey, details);
-  return details;
+/**
+ * The games on a player's wishlist (appids only; prices come from the store).
+ * Steam returns an empty result both for an empty wishlist and a private one.
+ */
+export async function getWishlist(steamId: string): Promise<WishlistItem[]> {
+  const data = (await steamApi("IWishlistService/GetWishlist/v1", { steamid: steamId })) as {
+    response?: { items?: WishlistItem[] };
+  };
+  return data.response?.items ?? [];
 }
 
-/** Only used by tests, so each test starts with an empty cache. */
-export function clearAppDetailsCache(): void {
-  appDetailsCache.clear();
+export type AchievementResult =
+  | { kind: "ok"; gameName: string; achievements: PlayerAchievement[] }
+  | { kind: "no_achievements" }
+  | { kind: "private" };
+
+/** A player's achievements in one game, with names and descriptions in English. */
+export async function getPlayerAchievements(steamId: string, appid: number): Promise<AchievementResult> {
+  // Steam explains problems ("Profile is not public", "Requested app has no stats")
+  // in the body of a 400 or 403 response, so read those bodies instead of failing.
+  const data = (await steamApi(
+    "ISteamUserStats/GetPlayerAchievements/v1",
+    { steamid: steamId, appid: String(appid), l: "english" },
+    [400, 403],
+  )) as { playerstats?: { success?: boolean; error?: string; gameName?: string; achievements?: PlayerAchievement[] } };
+
+  const stats = data.playerstats;
+  if (stats?.success) {
+    if (!stats.achievements?.length) return { kind: "no_achievements" };
+    return { kind: "ok", gameName: stats.gameName ?? `App ${appid}`, achievements: stats.achievements };
+  }
+  const error = stats?.error ?? "";
+  if (/not public/i.test(error)) return { kind: "private" };
+  if (/no stats|no achievements/i.test(error)) return { kind: "no_achievements" };
+  throw new FriendlyError(
+    `Steam couldn't load achievements for appid ${appid}` + (error ? ` ("${error}").` : ".") +
+      " Check that the player owns this game.",
+  );
+}
+
+/**
+ * What percent of all players have unlocked each achievement, keyed by the
+ * achievement's API name. Returns an empty map if Steam has no data.
+ */
+export async function getGlobalAchievementPercentages(appid: number): Promise<Map<string, number>> {
+  const data = (await steamApi("ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2", {
+    gameid: String(appid),
+  })) as { achievementpercentages?: { achievements?: { name: string; percent: number | string }[] } };
+
+  const percentages = new Map<string, number>();
+  for (const achievement of data.achievementpercentages?.achievements ?? []) {
+    // Some games send the percent as a string, e.g. "12.5".
+    const percent = Number(achievement.percent);
+    if (Number.isFinite(percent)) percentages.set(achievement.name, percent);
+  }
+  return percentages;
 }
