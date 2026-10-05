@@ -12,17 +12,22 @@ export function minutesToHours(minutes: number | undefined): number {
 }
 
 /**
- * Hours for display. A game that was opened but played for under ~3 minutes
- * would round to 0, which looks like it was never launched, so show "<0.1".
- *   formatHours(90) -> 1.5
- *   formatHours(2) -> "<0.1"
- *   formatHours(0, true) -> "<0.1"   (no minutes recorded, but it has a last-played date)
- *   formatHours(0) -> 0
+ * Hours as a number. Under 0.1 hours, keep two decimals so a brief session
+ * doesn't look like 0: 2 minutes -> 0.03, 90 minutes -> 1.5, 0 minutes -> 0.
  */
-export function formatHours(minutes: number | undefined, wasOpened = false): number | "<0.1" {
+export function preciseHours(minutes: number | undefined): number {
   const hours = minutesToHours(minutes);
-  if (hours > 0) return hours;
-  return (minutes ?? 0) > 0 || wasOpened ? "<0.1" : 0;
+  if (hours > 0 || !minutes || minutes <= 0) return hours;
+  return Math.max(0.01, Math.round((minutes / 60) * 100) / 100);
+}
+
+/**
+ * True when a game was opened but played for less than ~3 minutes in total
+ * (it would round to 0.0 hours). `wasOpened` covers games with 0 recorded
+ * minutes but a real last-played date.
+ */
+export function isBrieflyPlayed(minutes: number | undefined, wasOpened = false): boolean {
+  return minutesToHours(minutes) === 0 && ((minutes ?? 0) > 0 || wasOpened);
 }
 
 // Steam launched in September 2003. Older timestamps are junk: some old games

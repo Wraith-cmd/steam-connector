@@ -47,6 +47,15 @@ describe("tools/list", () => {
   it("lists all the tools", async () => {
     const reply = await rpc("tools/list", {});
     const names = reply.result.tools.map((tool: { name: string }) => tool.name);
+    const byName = Object.fromEntries(
+      reply.result.tools.map((tool: { name: string; description: string; inputSchema: { properties: object } }) => [tool.name, tool]),
+    );
+    // Current schemas, so a fresh Claude chat sees every option.
+    expect(Object.keys(byName.get_owned_games.inputSchema.properties).sort()).toEqual(["include_software", "limit", "profile"]);
+    expect(byName.get_game_details.description).toMatch(/review score/);
+    expect(byName.get_game_details.description).toMatch(/controller support/);
+    expect(byName.get_game_details.description).toMatch(/Steam Deck rating/);
+    expect(byName.get_game_details.description).toMatch(/PC requirements/);
     expect(names.sort()).toEqual([
       "check_handheld_compatibility",
       "get_achievement_progress",
@@ -183,6 +192,14 @@ describe("get_game_details", () => {
       minimum: "OS: Windows 7+; Processor: 2.0 GHz; Memory: 4 GB RAM; Graphics: 512MB VRAM & up",
       recommended: "OS: Windows 10; Memory: 8 GB RAM",
     });
+  });
+
+  it("reports Team Fortress 2 as partial controller support", async () => {
+    mockSteam();
+    const { data } = await callTool("get_game_details", { appid: 440 });
+    expect(data.name).toBe("Team Fortress 2");
+    expect(data.controller_support).toBe("partial");
+    expect(data.price).toBe("Free");
   });
 
   it("reads full controller support from the categories and handles games with no requirements", async () => {
