@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { handheldVerdict } from "../src/handheld.js";
 import { mapLimited } from "../src/http.js";
-import { describeDeckNote } from "../src/store.js";
+import { type AppDetails, controllerSupport, describeDeckNote, requirementsToText } from "../src/store.js";
 
 const deck = (category: 0 | 1 | 2 | 3) => ({ category, notes: [] });
 
@@ -43,5 +43,34 @@ describe("mapLimited", () => {
     });
     expect(results).toEqual([2, 4, 6, 8, 10, 12, 14]);
     expect(maxRunning).toBe(3);
+  });
+});
+
+describe("controllerSupport", () => {
+  const details = (extra: Partial<AppDetails>): AppDetails => ({ name: "Test", steam_appid: 1, ...extra });
+
+  it("uses Steam's controller_support field when present", () => {
+    expect(controllerSupport(details({ controller_support: "full" }))).toBe("full");
+    expect(controllerSupport(details({ controller_support: "partial" }))).toBe("partial");
+  });
+
+  it("falls back to the store categories", () => {
+    expect(controllerSupport(details({ categories: [{ description: "Full controller support" }] }))).toBe("full");
+    expect(controllerSupport(details({ categories: [{ description: "Partial Controller Support" }] }))).toBe("partial");
+    expect(controllerSupport(details({ categories: [{ description: "Single-player" }] }))).toBe("none");
+    expect(controllerSupport(details({}))).toBe("none");
+  });
+});
+
+describe("requirementsToText", () => {
+  it("turns Steam's requirements HTML into one line of plain text", () => {
+    expect(
+      requirementsToText(
+        '<strong>Minimum:</strong><br><ul class="bb_ul"><li>Requires a 64-bit processor and operating system<br></li>' +
+          "<li><strong>OS:</strong> Windows 10<br></li><li><strong>Storage:</strong> 20 GB available space</li></ul>",
+      ),
+    ).toBe("Requires a 64-bit processor and operating system; OS: Windows 10; Storage: 20 GB available space");
+    expect(requirementsToText(undefined)).toBeNull();
+    expect(requirementsToText("<strong>Minimum:</strong><br>")).toBeNull();
   });
 });

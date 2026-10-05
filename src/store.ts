@@ -4,6 +4,7 @@
 
 import { TtlCache } from "./cache.js";
 import { FriendlyError } from "./errors.js";
+import { cleanText, decodeEntities } from "./format.js";
 import { fetchJson } from "./http.js";
 
 const STORE = "https://store.steampowered.com";
@@ -15,12 +16,14 @@ export type AppDetails = {
   steam_appid: number;
   is_free?: boolean;
   short_description?: string;
-  controller_support?: "full" | "partial"; // missing means no controller support listed
+  controller_support?: "full" | "partial"; // often missing even when categories list support; see controllerSupport()
   platforms?: { windows?: boolean; mac?: boolean; linux?: boolean };
   genres?: { description: string }[];
   categories?: { description: string }[];
   release_date?: { coming_soon: boolean; date: string };
   price_overview?: { final_formatted: string; initial_formatted: string; discount_percent: number };
+  // HTML snippets. Steam sends an empty list instead of an object when a game has none.
+  pc_requirements?: { minimum?: string; recommended?: string } | unknown[];
 };
 
 export type ReviewSummary = {
@@ -128,6 +131,50 @@ export function describeDeckNote(token: string | undefined): string | null {
   const name = token.split("_").pop() ?? "";
   const words = name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase().trim();
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : null;
+}
+
+export type ControllerSupport = "full" | "partial" | "none";
+
+/**
+ * How well a game supports controllers. Steam's controller_support field is often
+ * missing (especially for partial support), so fall back to the store categories
+ * "Full controller support" and "Partial Controller Support".
+ */
+export function controllerSupport(details: AppDetails): ControllerSupport {
+  if (details.controller_support === "full" || details.controller_support === "partial") {
+    return details.controller_support;
+  }
+  const categories = (details.categories ?? []).map((category) => category.description.toLowerCase());
+  if (categories.includes("full controller support")) return "full";
+  if (categories.includes("partial controller support")) return "partial";
+  return "none";
+}
+
+/**
+ * Minimum and recommended PC requirements as plain text, e.g.
+ * "OS: Windows 10; Processor: Intel Core i5; Memory: 8 GB RAM". Null when Steam lists none.
+ */
+export function pcRequirements(details: AppDetails): { minimum: string | null; recommended: string | null } {
+  const requirements = Array.isArray(details.pc_requirements) ? {} : (details.pc_requirements ?? {});
+  return {
+    minimum: requirementsToText(requirements.minimum),
+    recommended: requirementsToText(requirements.recommended),
+  };
+}
+
+/** Turn Steam's requirements HTML into one line of plain text. */
+export function requirementsToText(html: string | undefined): string | null {
+  if (!html) return null;
+  const lines = decodeEntities(
+    html
+      .replace(/<br\s*\/?>|<\/li>|<\/p>|<\/ul>/gi, "\n") // line breaks and list items become new lines
+      .replace(/<[^>]*>/g, ""), // drop every other tag
+  )
+    .split("\n")
+    .map((line) => cleanText(line).replace(/^(minimum|recommended):\s*/i, ""))
+    .filter((line) => line !== "");
+  // Requirements can be long, so allow more than the usual text limit.
+  return lines.length ? cleanText(lines.join("; "), 800) : null;
 }
 
 /** Only used by tests, so each test starts with empty caches. */

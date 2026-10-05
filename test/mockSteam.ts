@@ -62,6 +62,8 @@ export function mockSteam(options: Options = {}) {
       case "/api/appdetails": {
         const appid = params.get("appids") ?? "";
         if (appid === "620") return json(fx.portal2Details);
+        if (appid === "262060") return json(fx.darkestDungeonDetails);
+        if (appid === "346110") return json(fx.arkDetails);
         return json({ [appid]: fx.moreAppDetails[appid] ?? { success: false } });
       }
       case "/IWishlistService/GetWishlist/v1/":
