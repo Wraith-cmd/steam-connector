@@ -25,7 +25,9 @@ export function mockSteam(options: Options = {}) {
     if (options.failPaths?.includes(url.pathname)) return new Response("error", { status: 500 });
     const json = (body: unknown) => Response.json(body);
 
-    if (url.hostname === "api.steampowered.com" && params.get("key") !== TEST_API_KEY) {
+    // Like real Steam, every Web API method we use needs the key except the store item lookup.
+    const keyless = url.pathname === "/IStoreBrowseService/GetItems/v1/";
+    if (url.hostname === "api.steampowered.com" && !keyless && params.get("key") !== TEST_API_KEY) {
       return new Response("<html>Forbidden</html>", { status: 403 });
     }
 
@@ -37,10 +39,22 @@ export function mockSteam(options: Options = {}) {
       case "/IPlayerService/GetOwnedGames/v1/": {
         const steamid = params.get("steamid");
         if (steamid === fx.PRIVATE_STEAM_ID) return json(fx.privateGames);
+        if (steamid === fx.MESSY_STEAM_ID) return json(fx.messyOwnedGames);
         return json(steamid === fx.FRIEND_STEAM_ID ? fx.friendOwnedGames : fx.ownedGames);
       }
-      case "/IPlayerService/GetRecentlyPlayedGames/v1/":
-        return json(params.get("steamid") === fx.PRIVATE_STEAM_ID ? fx.privateGames : fx.recentlyPlayed);
+      case "/IStoreBrowseService/GetItems/v1/": {
+        if (params.has("key")) return new Response("this endpoint should not get the key", { status: 400 });
+        const input = JSON.parse(params.get("input_json") ?? "{}") as { ids?: { appid: number }[] };
+        const items = (input.ids ?? [])
+          .filter(({ appid }) => appid in fx.storeTypes)
+          .map(({ appid }) => ({ appid, type: fx.storeTypes[appid], success: 1 }));
+        return json({ response: { store_items: items } });
+      }
+      case "/IPlayerService/GetRecentlyPlayedGames/v1/": {
+        const steamid = params.get("steamid");
+        if (steamid === fx.PRIVATE_STEAM_ID) return json(fx.privateGames);
+        return json(steamid === fx.MESSY_STEAM_ID ? fx.messyRecentlyPlayed : fx.recentlyPlayed);
+      }
       case "/ISteamUser/GetPlayerSummaries/v2/": {
         const player = fx.playerSummaries[params.get("steamids") ?? ""];
         return json({ response: { players: player ? [player] : [] } });

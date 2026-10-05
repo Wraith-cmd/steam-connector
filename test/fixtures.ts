@@ -193,3 +193,70 @@ export const portal2Reviews = {
   query_summary: { num_reviews: 0, review_score: 9, review_score_desc: "Overwhelmingly Positive", total_positive: 980, total_negative: 20, total_reviews: 1000 },
   reviews: [],
 };
+
+// ---------- A messy library, modelled on real Steam data ----------
+
+export const MESSY_STEAM_ID = "76561198000000003";
+
+export const messyOwnedGames = {
+  response: {
+    game_count: 14,
+    games: [
+      { appid: 4000, name: "Garry's Mod", playtime_forever: 64488, rtime_last_played: 1768089600 },
+      // Old games where Steam sends a junk timestamp (about a day after 1970).
+      { appid: 1250, name: "Killing Floor", playtime_forever: 1488, rtime_last_played: 86400 },
+      // Opened briefly: 2 minutes rounds to 0.0 hours.
+      { appid: 218680, name: "Scribblenauts Unlimited", playtime_forever: 2, rtime_last_played: 1540339200 },
+      // Opened (has a real date) but Steam recorded 0 minutes.
+      { appid: 1237950, name: "STAR WARS™ Battlefront™ II", playtime_forever: 0, rtime_last_played: 1780790400 },
+      // Never played.
+      { appid: 1237970, name: "Titanfall® 2", playtime_forever: 0, rtime_last_played: 0 },
+      // Messy names.
+      { appid: 403120, name: "THE GAME OF LIFE ", playtime_forever: 102, rtime_last_played: 1576281600 },
+      { appid: 1449850, name: "Yu-Gi-Oh!  Master Duel", playtime_forever: 348, rtime_last_played: 1674172800 },
+      // Software: Soundpad is type 6 in the store, EVGA is type 13 (tool),
+      // and Wallpaper Engine is missing from the store lookup (caught by the fallback list).
+      { appid: 629520, name: "Soundpad", playtime_forever: 18444, rtime_last_played: 1765756800 },
+      { appid: 268850, name: "EVGA Precision X1", playtime_forever: 78, rtime_last_played: 1711497600 },
+      { appid: 431960, name: "Wallpaper Engine", playtime_forever: 9762, rtime_last_played: 1788739200 },
+      // Playtests: two recognised by name, one only by its store type (12 = beta).
+      { appid: 2076040, name: "THE FINALS PLAYTEST", playtime_forever: 936, rtime_last_played: 1698796800 },
+      { appid: 1829770, name: "MultiVersus – Technical Test", playtime_forever: 1002, rtime_last_played: 1653350400 },
+      { appid: 3000001, name: "Project Nightfall", playtime_forever: 60, rtime_last_played: 1700000000 },
+      // Not a playtest, even though the name starts with "Play".
+      { appid: 1721470, name: "Poppy Playtime", playtime_forever: 36, rtime_last_played: 1677888000 },
+    ],
+  },
+};
+
+export const messyRecentlyPlayed = {
+  response: {
+    total_count: 2,
+    games: [
+      { appid: 2076040, name: "THE FINALS PLAYTEST", playtime_2weeks: 2, playtime_forever: 936 },
+      { appid: 403120, name: "THE GAME OF LIFE ", playtime_2weeks: 0, playtime_forever: 102 },
+    ],
+  },
+};
+
+// What IStoreBrowseService/GetItems reports as each app's type (6 software, 12 beta, 13 tool, 0 game).
+// Apps missing here are left out of the response, as Steam does for apps without a store entry.
+export const storeTypes: Record<number, number> = {
+  4000: 0,
+  1250: 0,
+  218680: 0,
+  1237950: 0,
+  1237970: 0,
+  403120: 0,
+  1449850: 0,
+  629520: 6,
+  268850: 13,
+  2076040: 12,
+  1829770: 0,
+  3000001: 12,
+  1721470: 0,
+  620: 0,
+  413150: 0,
+  1145360: 0,
+  105600: 0,
+};
