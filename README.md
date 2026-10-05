@@ -30,9 +30,9 @@ If you don't give a profile, your own (`STEAM_ID`) is used.
 
 ### Reading the numbers
 
-- **Hours** are rounded to one decimal. `"<0.1"` means the game was opened but played for only a few minutes.
+- **Hours** are always numbers, rounded to one decimal (two decimals under 0.1, so 2 minutes shows as `0.03`). `briefly_played: true` marks games that were opened for only a few minutes, including ones where Steam recorded 0 minutes but has a last-played date.
 - **Last played** is a date, `"unknown"` (you played it, but Steam has no date, which is common for older games), or `"never"`.
-- **Software and tools** (Soundpad, Wallpaper Engine, GPU utilities, game-making kits) are hidden from `get_owned_games` by default so they don't skew your totals. `software_hidden_count` says how many were left out, and `include_software: true` brings them back, marked `is_software`. Detection uses Steam's own app types, looked up in batches of 100 and remembered for a day.
+- **Software and tools** (Soundpad, Wallpaper Engine, GPU utilities, game-making kits) are hidden from `get_owned_games` by default so they don't skew your totals. `software_count` always says how many software apps your library has, `software_included` says whether they're in the list and totals, and `include_software: true` brings them back, marked `is_software`. Detection uses Steam's own app types, looked up in batches of 100 and remembered for a day.
 - **Playtests** (like "THE FINALS PLAYTEST" or "MultiVersus – Technical Test") are kept but marked `is_playtest: true`.
 
 All tools are read-only. Nothing can change your Steam account.
