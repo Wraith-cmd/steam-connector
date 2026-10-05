@@ -13,8 +13,9 @@ import { registerTools } from "../src/tools.js";
 const mcpHandler = createMcpHandler(registerTools, {
   serverInfo: { name: "steam-connector", version: "1.0.0" },
   instructions:
-    "Tools for reading a Steam library: owned games with playtime, recently played games, " +
-    "store details for a game, and profile privacy status. Use them to recommend what to play next.",
+    "Tools for reading a Steam library: owned games with playtime, recently played games, store details " +
+    "with reviews, handheld (ROG Ally / Steam Deck) compatibility, achievement progress, wishlist prices, " +
+    "games shared with a friend, and profile privacy status. Use them to recommend what to play next.",
   verboseLogs: false, // Verbose logs could include request details; keep them off.
 });
 

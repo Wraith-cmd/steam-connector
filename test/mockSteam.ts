@@ -11,6 +11,8 @@ type Options = {
   failWithStatus?: number;
   /** Make every Steam request fail as if the network were down. */
   networkDown?: boolean;
+  /** Make only requests to these paths fail with HTTP 500. */
+  failPaths?: string[];
 };
 
 export function mockSteam(options: Options = {}) {
@@ -20,6 +22,7 @@ export function mockSteam(options: Options = {}) {
 
     const url = new URL(String(input));
     const params = url.searchParams;
+    if (options.failPaths?.includes(url.pathname)) return new Response("error", { status: 500 });
     const json = (body: unknown) => Response.json(body);
 
     if (url.hostname === "api.steampowered.com" && params.get("key") !== TEST_API_KEY) {
@@ -31,8 +34,11 @@ export function mockSteam(options: Options = {}) {
         const steamid = fx.vanityNames[params.get("vanityurl") ?? ""];
         return json({ response: steamid ? { success: 1, steamid } : { success: 42, message: "No match" } });
       }
-      case "/IPlayerService/GetOwnedGames/v1/":
-        return json(params.get("steamid") === fx.PRIVATE_STEAM_ID ? fx.privateGames : fx.ownedGames);
+      case "/IPlayerService/GetOwnedGames/v1/": {
+        const steamid = params.get("steamid");
+        if (steamid === fx.PRIVATE_STEAM_ID) return json(fx.privateGames);
+        return json(steamid === fx.FRIEND_STEAM_ID ? fx.friendOwnedGames : fx.ownedGames);
+      }
       case "/IPlayerService/GetRecentlyPlayedGames/v1/":
         return json(params.get("steamid") === fx.PRIVATE_STEAM_ID ? fx.privateGames : fx.recentlyPlayed);
       case "/ISteamUser/GetPlayerSummaries/v2/": {
@@ -41,7 +47,28 @@ export function mockSteam(options: Options = {}) {
       }
       case "/api/appdetails": {
         const appid = params.get("appids") ?? "";
-        return json(appid === "620" ? fx.portal2Details : { [appid]: { success: false } });
+        if (appid === "620") return json(fx.portal2Details);
+        return json({ [appid]: fx.moreAppDetails[appid] ?? { success: false } });
+      }
+      case "/IWishlistService/GetWishlist/v1/":
+        return json(params.get("steamid") === fx.MY_STEAM_ID ? fx.wishlist : { response: {} });
+      case "/ISteamUserStats/GetPlayerAchievements/v1/": {
+        // Real Steam explains these errors in the body of a 403 / 400 response.
+        if (params.get("steamid") === fx.PRIVATE_STEAM_ID) {
+          return Response.json({ playerstats: { error: "Profile is not public", success: false } }, { status: 403 });
+        }
+        const appid = params.get("appid");
+        if (appid === "620") return json(fx.portal2Achievements);
+        if (appid === "413150") return json(fx.stardewAchievements);
+        return Response.json({ playerstats: { error: "Requested app has no stats", success: false } }, { status: 400 });
+      }
+      case "/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/":
+        return json(params.get("gameid") === "620" ? fx.portal2GlobalPercentages : { achievementpercentages: { achievements: [] } });
+      case "/appreviews/620":
+        return json(fx.portal2Reviews);
+      case "/saleaction/ajaxgetdeckappcompatibilityreport": {
+        const appid = params.get("nAppID") ?? "";
+        return json(fx.deckReports[appid] ?? { success: 1, results: { appid: Number(appid), resolved_category: 0 } });
       }
       default:
         return new Response("not found", { status: 404 });
