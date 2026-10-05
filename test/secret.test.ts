@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleRequest } from "../api/mcp.js";
-import { getSecretFromRequest, isValidSecret } from "../src/secret.js";
+import { describeRejection, getSecretFromRequest, isValidSecret } from "../src/secret.js";
 
 const SECRET = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6";
 
@@ -48,8 +48,24 @@ describe("getSecretFromRequest", () => {
     expect(secretOf(`https://app.vercel.app/mcp/${SECRET}/extra`)).toBeUndefined();
   });
 
+  it("ignores spaces around the secret", () => {
+    expect(secretOf(`https://app.vercel.app/mcp/%20${SECRET}%20`)).toBe(SECRET);
+  });
+
   it("returns undefined for malformed encoding instead of crashing", () => {
     expect(secretOf("https://app.vercel.app/mcp/%E0%A4%A")).toBeUndefined();
+  });
+});
+
+describe("describeRejection", () => {
+  it("explains each reason without revealing either secret", () => {
+    expect(describeRejection(SECRET, undefined)).toMatch(/MCP_SECRET is not set/);
+    expect(describeRejection("short", "short")).toMatch(/only 5 characters/);
+    expect(describeRejection(undefined, SECRET)).toMatch(/URL has no secret/);
+    const mismatch = describeRejection("wrong-secret-value", SECRET);
+    expect(mismatch).toMatch(/URL secret: 18 characters, MCP_SECRET: 32 characters/);
+    expect(mismatch).not.toContain(SECRET);
+    expect(mismatch).not.toContain("wrong-secret-value");
   });
 });
 
@@ -75,6 +91,21 @@ describe("handleRequest secret check", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect((await post("https://app.vercel.app/mcp/anything-at-all-here")).status).toBe(404);
     expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("accepts the right secret even if MCP_SECRET was pasted with spaces or a line break", async () => {
+    vi.stubEnv("MCP_SECRET", `  ${SECRET}\n`);
+    expect((await post(`https://app.vercel.app/mcp/${SECRET}`)).status).toBe(200);
+  });
+
+  it("logs why a request was refused, without the secret", async () => {
+    vi.stubEnv("MCP_SECRET", SECRET);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await post("https://app.vercel.app/mcp/wrong-secret-wrong-secret");
+    const logged = String(warn.mock.calls[0]);
+    expect(logged).toMatch(/doesn't match MCP_SECRET/);
+    expect(logged).not.toContain(SECRET);
     warn.mockRestore();
   });
 
