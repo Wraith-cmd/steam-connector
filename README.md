@@ -194,7 +194,7 @@ You can explore the tools with the [MCP Inspector](https://github.com/modelconte
 
 ```
 api/mcp.ts        The Vercel Function: checks the secret, then runs the MCP server
-src/server.ts     The four tools
+src/tools.ts      The four tools
 src/steam.ts      All calls to Steam, plus friendly errors and the store cache
 src/profile.ts    Turns "profile" input (ID, link, or name) into a SteamID64
 src/secret.ts     The URL secret check
@@ -202,7 +202,7 @@ src/errors.ts     Friendly errors and secret redaction
 src/format.ts     Minutes → hours, timestamps → dates
 src/cache.ts      A tiny in-memory cache (store details are cached for 1 hour)
 test/             Tests, with a fake Steam so they run offline
-vercel.json       Routes /mcp/<secret> to the function
+vercel.json       Routes /mcp/<secret> to the function and pins the "Other" preset
 ```
 
 Built with [`mcp-handler`](https://github.com/vercel/mcp-handler) and the official [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk).
