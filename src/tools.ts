@@ -6,11 +6,13 @@
 import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import { FriendlyError, toToolError } from "./errors.js";
-import { decodeEntities, minutesToHours, unixToDate } from "./format.js";
+import { type AppKinds, classifyApps } from "./classify.js";
+import { cleanText, decodeEntities, formatHours, gameName, lastPlayedLabel, minutesToHours, unixToDate } from "./format.js";
 import { DECK_LABELS, handheldVerdict } from "./handheld.js";
 import { mapLimited } from "./http.js";
 import { resolveProfile } from "./profile.js";
 import {
+  type OwnedGame,
   getGlobalAchievementPercentages,
   getOwnedGames,
   getPlayerAchievements,
@@ -52,6 +54,9 @@ export function registerTools(server: McpServer): void {
       description:
         "List every game in a Steam library with total hours, hours in the last 2 weeks, and the last played " +
         "date, sorted by total hours (most played first). Also reports how many games have never been played. " +
+        'Hours of "<0.1" mean the game was opened only briefly. last_played is a date, "unknown" (played, but ' +
+        'Steam has no date), or "never". Software such as Soundpad or Wallpaper Engine is left out unless ' +
+        "include_software is true. Playtests are marked is_playtest. " +
         "Use this to understand someone's taste and backlog before recommending what to play.",
       inputSchema: z.object({
         profile: profileInput,
@@ -62,33 +67,43 @@ export function registerTools(server: McpServer): void {
           .max(10000)
           .optional()
           .describe("Optional: only return the top N games by total hours. Leave empty for all games."),
+        include_software: z
+          .boolean()
+          .optional()
+          .describe("Include software and tools (like Soundpad or Wallpaper Engine) as well as games. Default false."),
       }),
       annotations: readOnly,
     },
-    async ({ profile, limit }) => {
+    async ({ profile, limit, include_software }) => {
       try {
         const steamId = await resolveProfile(profile);
         const games = await getOwnedGames(steamId);
         if (games === null) throw new FriendlyError(PRIVATE_GAMES_MESSAGE);
 
-        const list = games
-          .map((game) => ({
-            name: game.name ?? `App ${game.appid}`,
-            appid: game.appid,
-            hours_total: minutesToHours(game.playtime_forever),
-            hours_last_2_weeks: minutesToHours(game.playtime_2weeks),
-            last_played: unixToDate(game.rtime_last_played) ?? "never",
-          }))
-          .sort((a, b) => b.hours_total - a.hours_total || a.name.localeCompare(b.name));
+        const kinds = await classifyApps(games.map((game) => game.appid));
+        const visible = include_software ? games : games.filter((game) => !kinds.isSoftware(game.appid));
 
-        const totalMinutes = games.reduce((sum, game) => sum + (game.playtime_forever ?? 0), 0);
+        const list = [...visible]
+          .sort(
+            (a, b) =>
+              (b.playtime_forever ?? 0) - (a.playtime_forever ?? 0) ||
+              gameName(a.name, a.appid).localeCompare(gameName(b.name, b.appid)),
+          )
+          .map((game) => describeGame(game, kinds));
+
+        // Totals count only what's shown, so software doesn't inflate them.
+        const totalMinutes = visible.reduce((sum, game) => sum + (game.playtime_forever ?? 0), 0);
         const shown = limit ? list.slice(0, limit) : list;
 
         return jsonResult({
           steam_id: steamId,
-          game_count: games.length,
-          never_played_count: games.filter((game) => !game.playtime_forever).length,
+          game_count: visible.length,
+          never_played_count: list.filter((game) => game.last_played === "never").length,
           total_hours: minutesToHours(totalMinutes),
+          ...(!include_software && { software_hidden_count: games.length - visible.length }),
+          ...(!kinds.complete && {
+            note: "Steam's app-type lookup failed, so only well-known software was detected.",
+          }),
           showing: shown.length,
           games: shown,
         });
@@ -114,19 +129,26 @@ export function registerTools(server: McpServer): void {
         const games = await getRecentlyPlayedGames(steamId);
         if (games === null) throw new FriendlyError(PRIVATE_GAMES_MESSAGE);
 
-        const list = games
-          .map((game) => ({
-            name: game.name ?? `App ${game.appid}`,
-            appid: game.appid,
-            hours_last_2_weeks: minutesToHours(game.playtime_2weeks),
-            hours_total: minutesToHours(game.playtime_forever),
-          }))
-          .sort((a, b) => b.hours_last_2_weeks - a.hours_last_2_weeks);
+        const kinds = await classifyApps(games.map((game) => game.appid));
+        const list = [...games]
+          .sort((a, b) => (b.playtime_2weeks ?? 0) - (a.playtime_2weeks ?? 0))
+          .map((game) => {
+            const name = gameName(game.name, game.appid);
+            return {
+              name,
+              appid: game.appid,
+              // Every game here was played in the last 2 weeks, so 0 minutes means "opened briefly".
+              hours_last_2_weeks: formatHours(game.playtime_2weeks, true),
+              hours_total: formatHours(game.playtime_forever, true),
+              ...appFlags(game.appid, name, kinds),
+            };
+          });
+        const minutes2Weeks = games.reduce((sum, game) => sum + (game.playtime_2weeks ?? 0), 0);
 
         return jsonResult({
           steam_id: steamId,
           game_count: list.length,
-          hours_last_2_weeks: Math.round(list.reduce((sum, game) => sum + game.hours_last_2_weeks, 0) * 10) / 10,
+          hours_last_2_weeks: minutesToHours(minutes2Weeks),
           games: list,
           ...(list.length === 0 && { note: "No games played in the last 2 weeks." }),
         });
@@ -164,9 +186,9 @@ export function registerTools(server: McpServer): void {
 
         return jsonResult({
           appid: details.steam_appid,
-          name: details.name,
+          name: gameName(details.name, details.steam_appid),
           type: details.type,
-          short_description: decodeEntities(details.short_description ?? ""),
+          short_description: cleanText(decodeEntities(details.short_description ?? "")),
           genres: details.genres?.map((genre) => genre.description) ?? [],
           categories: details.categories?.map((category) => category.description) ?? [],
           release_date: details.release_date?.date || "unknown",
@@ -207,7 +229,7 @@ export function registerTools(server: McpServer): void {
 
         return jsonResult({
           steam_id: steamId,
-          display_name: player.personaname,
+          display_name: cleanText(player.personaname),
           profile_url: player.profileurl,
           profile_public: profilePublic,
           game_details_public: gameDetailsPublic,
@@ -247,7 +269,7 @@ export function registerTools(server: McpServer): void {
           const verdict = handheldVerdict(deck, controller, details.platforms?.windows ?? true);
           return {
             appid,
-            name: details.name,
+            name: gameName(details.name, appid),
             handheld_rating: verdict.rating,
             explanation: verdict.explanation,
             steam_deck_rating: DECK_LABELS[deck.category],
@@ -292,8 +314,8 @@ export function registerTools(server: McpServer): void {
         const locked = result.achievements
           .filter((achievement) => achievement.achieved !== 1)
           .map((achievement) => ({
-            name: achievement.name || achievement.apiname,
-            description: achievement.description || "(hidden achievement)",
+            name: cleanText(achievement.name) || achievement.apiname,
+            description: cleanText(achievement.description) || "(hidden achievement)",
             percent_of_players_who_have_it: rarity.has(achievement.apiname)
               ? Math.round(rarity.get(achievement.apiname)! * 10) / 10
               : null,
@@ -303,7 +325,7 @@ export function registerTools(server: McpServer): void {
         return jsonResult({
           steam_id: steamId,
           appid,
-          game: result.gameName,
+          game: gameName(result.gameName, appid),
           unlocked,
           total,
           // Round down so 99.96% never shows as 100%.
@@ -359,7 +381,7 @@ export function registerTools(server: McpServer): void {
           const details = await getAppDetails(item.appid);
           const discount = details?.price_overview?.discount_percent ?? 0;
           return {
-            name: details?.name ?? `App ${item.appid}`,
+            name: gameName(details?.name, item.appid),
             appid: item.appid,
             price: details ? describePrice(details) : "Not on the store",
             on_sale: discount > 0,
@@ -423,16 +445,24 @@ export function registerTools(server: McpServer): void {
           );
         }
 
-        const friendHours = new Map(friendGames.map((game) => [game.appid, minutesToHours(game.playtime_forever)]));
-        const shared = yourGames
-          .filter((game) => friendHours.has(game.appid))
-          .map((game) => ({
-            name: game.name ?? `App ${game.appid}`,
-            appid: game.appid,
-            your_hours: minutesToHours(game.playtime_forever),
-            friend_hours: friendHours.get(game.appid)!,
-          }))
-          .sort((a, b) => b.your_hours + b.friend_hours - (a.your_hours + a.friend_hours) || a.name.localeCompare(b.name));
+        const friendCopies = new Map(friendGames.map((game) => [game.appid, game]));
+        const pairs = yourGames
+          .filter((game) => friendCopies.has(game.appid))
+          .map((game) => ({ yours: game, theirs: friendCopies.get(game.appid)!, name: gameName(game.name, game.appid) }));
+        const minutes = (game: OwnedGame) => game.playtime_forever ?? 0;
+        pairs.sort(
+          (a, b) =>
+            minutes(b.yours) + minutes(b.theirs) - (minutes(a.yours) + minutes(a.theirs)) || a.name.localeCompare(b.name),
+        );
+
+        const kinds = await classifyApps(pairs.map((pair) => pair.yours.appid));
+        const shared = pairs.map(({ yours, theirs, name }) => ({
+          name,
+          appid: yours.appid,
+          your_hours: formatHours(yours.playtime_forever, wasOpened(yours)),
+          friend_hours: formatHours(theirs.playtime_forever, wasOpened(theirs)),
+          ...appFlags(yours.appid, name, kinds),
+        }));
         const shown = shared.slice(0, limit ?? 50);
 
         return jsonResult({
@@ -449,6 +479,33 @@ export function registerTools(server: McpServer): void {
       }
     },
   );
+}
+
+/** One owned game as returned by get_owned_games. */
+function describeGame(game: OwnedGame, kinds: AppKinds) {
+  const name = gameName(game.name, game.appid);
+  const lastPlayed = lastPlayedLabel(game.playtime_forever, game.rtime_last_played);
+  return {
+    name,
+    appid: game.appid,
+    hours_total: formatHours(game.playtime_forever, lastPlayed !== "never"),
+    hours_last_2_weeks: formatHours(game.playtime_2weeks),
+    last_played: lastPlayed,
+    ...appFlags(game.appid, name, kinds),
+  };
+}
+
+/** True if Steam has any sign the game was ever launched. */
+function wasOpened(game: OwnedGame): boolean {
+  return lastPlayedLabel(game.playtime_forever, game.rtime_last_played) !== "never";
+}
+
+/** `is_software` / `is_playtest` flags, included only when true to keep output short. */
+function appFlags(appid: number, name: string, kinds: AppKinds) {
+  return {
+    ...(kinds.isSoftware(appid) && { is_software: true as const }),
+    ...(kinds.isPlaytest(appid, name) && { is_playtest: true as const }),
+  };
 }
 
 /** Turn Steam's price info into one readable string, e.g. "$9.99 (50% off, normally $19.99)". */
