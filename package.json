@@ -1,0 +1,37 @@
+{
+  "name": "steam-connector",
+  "version": "1.0.0",
+  "description": "A remote MCP server that lets Claude read your Steam library and recommend what to play next.",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run test"
+  },
+  "keywords": [
+    "mcp",
+    "steam",
+    "claude",
+    "vercel"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Wraith-cmd/steam-connector.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Wraith-cmd/steam-connector/issues"
+  },
+  "homepage": "https://github.com/Wraith-cmd/steam-connector#readme",
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.3.0",
+    "mcp-handler": "^2.2.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.3"
+  }
+}

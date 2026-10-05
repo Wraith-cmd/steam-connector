@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Secrets: never commit real environment files
+.env
+.env.*
+!.env.example
+
+# Vercel
+.vercel/
+
+# Logs and OS clutter
+*.log
+.DS_Store
+coverage/
