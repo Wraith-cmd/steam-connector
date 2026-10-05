@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { handleRequest } from "../api/mcp.js";
-import { clearAppDetailsCache } from "../src/steam.js";
+import { clearStoreCaches } from "../src/store.js";
 import { MY_STEAM_ID, PRIVATE_STEAM_ID } from "./fixtures.js";
 import { mockSteam, TEST_API_KEY } from "./mockSteam.js";
 
@@ -12,7 +12,7 @@ beforeEach(() => {
   vi.stubEnv("MCP_SECRET", SECRET);
   vi.stubEnv("STEAM_API_KEY", TEST_API_KEY);
   vi.stubEnv("STEAM_ID", MY_STEAM_ID);
-  clearAppDetailsCache();
+  clearStoreCaches();
 });
 
 /** Send one JSON-RPC request to the MCP endpoint and return the parsed reply. */
@@ -44,10 +44,19 @@ async function callTool(name: string, args: Record<string, unknown> = {}) {
 }
 
 describe("tools/list", () => {
-  it("lists the four tools", async () => {
+  it("lists all the tools", async () => {
     const reply = await rpc("tools/list", {});
     const names = reply.result.tools.map((tool: { name: string }) => tool.name);
-    expect(names.sort()).toEqual(["get_game_details", "get_owned_games", "get_player_summary", "get_recently_played"]);
+    expect(names.sort()).toEqual([
+      "check_handheld_compatibility",
+      "get_achievement_progress",
+      "get_game_details",
+      "get_owned_games",
+      "get_player_summary",
+      "get_recently_played",
+      "get_shared_games",
+      "get_wishlist",
+    ]);
   });
 });
 
@@ -140,6 +149,8 @@ describe("get_game_details", () => {
       release_date: "18 Apr, 2011",
       coming_soon: false,
       price: "$1.99 (80% off, normally $9.99)",
+      reviews: { summary: "Overwhelmingly Positive", percent_positive: 98, total_reviews: 1000 },
+      controller_support: "none listed",
       store_url: "https://store.steampowered.com/app/620/",
     });
   });
@@ -153,8 +164,17 @@ describe("get_game_details", () => {
   it("caches store responses so repeat lookups don't hit Steam", async () => {
     const fetchMock = mockSteam();
     await callTool("get_game_details", { appid: 620 });
+    expect(fetchMock).toHaveBeenCalledTimes(2); // store page + reviews
     await callTool("get_game_details", { appid: 620 });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2); // both served from the cache
+  });
+
+  it("still returns details when the review lookup fails", async () => {
+    mockSteam();
+    const { data } = await callTool("get_game_details", { appid: 413150 }); // no review fixture -> 404
+    expect(data.name).toBe("Stardew Valley");
+    expect(data.reviews).toBe("unavailable right now");
+    expect(data.controller_support).toBe("full");
   });
 
   it("explains an appid with no store page", async () => {

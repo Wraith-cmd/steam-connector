@@ -12,10 +12,14 @@ This is a small **remote MCP server**. MCP (Model Context Protocol) is the stand
 | --- | --- |
 | `get_owned_games` | Every game you own: name, appid, total hours, hours in the last 2 weeks, and last played date, sorted by most played. Also counts games you've never played. |
 | `get_recently_played` | Games you've played in the last 2 weeks, with hours. |
-| `get_game_details` | A game's genres, categories (Single-player, Co-op, …), short description, release date, and current price. |
+| `get_game_details` | A game's genres, categories (Single-player, Co-op, …), short description, release date, current price, user review score, and controller support. |
+| `check_handheld_compatibility` | How well games play on a handheld PC like the **ROG Ally**, Legion Go, MSI Claw, or Steam Deck. Combines Valve's Steam Deck rating with controller support (up to 10 games at a time). |
+| `get_achievement_progress` | How close you are to **100% achievements** in a game, with the locked achievements sorted easiest first. |
+| `get_wishlist` | Your wishlist, top-ranked first, with current prices and which games are **on sale**. |
+| `get_shared_games` | Games you and a friend both own, with both players' hours. Handy for picking a co-op game. |
 | `get_player_summary` | A profile's display name and URL, and whether the profile and its game details are public. |
 
-Every tool takes an optional **profile**, so you can also ask about a friend's public profile. The profile can be:
+Every tool that reads a player's data takes an optional **profile**, so you can also ask about a friend's public profile. The profile can be:
 
 - a SteamID64: `76561197960287930`
 - a profile link: `https://steamcommunity.com/profiles/76561197960287930`
@@ -140,6 +144,9 @@ That's it. Try one of the prompts below.
 - "Find games I own but have never played, check their genres, and pick the three I'm most likely to love."
 - "I bounce off long RPGs. Which of my unplayed games are short and good for quick sessions?"
 - "Compare my library with my friend's profile `steamcommunity.com/id/theirname` and suggest a co-op game we both own."
+- "Which of my 20 most-played games will run great on my ROG Ally?"
+- "How close am I to 100% in Hades? Which missing achievements are easiest?"
+- "Is anything on my wishlist on sale right now? Is it worth buying, based on its reviews?"
 - "Is my Steam profile set up correctly for this connector?"
 
 ---
@@ -194,13 +201,16 @@ You can explore the tools with the [MCP Inspector](https://github.com/modelconte
 
 ```
 api/mcp.ts        The Vercel Function: checks the secret, then runs the MCP server
-src/tools.ts      The four tools
-src/steam.ts      All calls to Steam, plus friendly errors and the store cache
+src/tools.ts      The tools Claude can call
+src/steam.ts      Calls to the Steam Web API (your library, wishlist, achievements)
+src/store.ts      Calls to the Steam store (details, reviews, Steam Deck ratings), cached
+src/handheld.ts   Decides how well a game suits a handheld PC like the ROG Ally
+src/http.ts       Fetches from Steam and turns failures into friendly errors
 src/profile.ts    Turns "profile" input (ID, link, or name) into a SteamID64
 src/secret.ts     The URL secret check
 src/errors.ts     Friendly errors and secret redaction
 src/format.ts     Minutes → hours, timestamps → dates
-src/cache.ts      A tiny in-memory cache (store details are cached for 1 hour)
+src/cache.ts      A tiny in-memory cache (store lookups are cached for 1 hour)
 test/             Tests, with a fake Steam so they run offline
 vercel.json       Routes /mcp/<secret> to the function and pins the "Other" preset
 ```
