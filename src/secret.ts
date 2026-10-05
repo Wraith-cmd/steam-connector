@@ -16,7 +16,7 @@ export function getSecretFromRequest(request: Request): string | undefined {
   const raw = fromPath ?? url.searchParams.get("secret") ?? undefined;
   if (!raw) return undefined;
   try {
-    return decodeURIComponent(raw);
+    return decodeURIComponent(raw).trim();
   } catch {
     return undefined; // Malformed percent-encoding: treat as no secret.
   }
@@ -33,4 +33,20 @@ export function isValidSecret(provided: string | undefined, expected: string | u
   const a = createHash("sha256").update(provided).digest();
   const b = createHash("sha256").update(expected).digest();
   return timingSafeEqual(a, b);
+}
+
+/**
+ * Explain (for the server owner's logs) why a request was refused. Only lengths are
+ * included, never the secrets themselves, so it is safe to log.
+ */
+export function describeRejection(provided: string | undefined, expected: string | undefined): string {
+  if (!expected) return "MCP_SECRET is not set in Vercel. Add it, then redeploy.";
+  if (expected.length < MIN_SECRET_LENGTH) {
+    return `MCP_SECRET is only ${expected.length} characters; it must be at least ${MIN_SECRET_LENGTH}.`;
+  }
+  if (!provided) return "the URL has no secret. The connector URL must end in /mcp/<MCP_SECRET>.";
+  return (
+    `the secret in the URL doesn't match MCP_SECRET ` +
+    `(URL secret: ${provided.length} characters, MCP_SECRET: ${expected.length} characters).`
+  );
 }
