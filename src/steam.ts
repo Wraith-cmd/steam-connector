@@ -2,6 +2,7 @@
 // Store calls (prices, reviews, Steam Deck ratings) live in store.ts.
 
 import { FriendlyError } from "./errors.js";
+import { TtlCache } from "./cache.js";
 import { cleanText } from "./format.js";
 import { fetchJson } from "./http.js";
 
@@ -59,10 +60,26 @@ function getApiKey(): string {
   return key;
 }
 
+// Claude often asks for the same data several times in one conversation (for example the
+// owned games list), so remember Web API answers for 2 minutes. Errors are never cached.
+const webApiCache = new TtlCache<unknown>(2 * 60 * 1000, 1000);
+
 /** Call a Steam Web API method, e.g. steamApi("IPlayerService/GetOwnedGames/v1", { steamid }). */
 async function steamApi(method: string, params: Record<string, string>, readBodyOn: number[] = []): Promise<unknown> {
+  // The cache key never includes the API key.
+  const cacheKey = `${method}?${new URLSearchParams(params)}`;
+  const cached = webApiCache.get(cacheKey);
+  if (cached !== undefined) return cached;
+
   const query = new URLSearchParams({ key: getApiKey(), format: "json", ...params });
-  return fetchJson(`${WEB_API}/${method}/?${query}`, "Web API", readBodyOn);
+  const data = await fetchJson(`${WEB_API}/${method}/?${query}`, "Web API", readBodyOn);
+  webApiCache.set(cacheKey, data);
+  return data;
+}
+
+/** Only used by tests, so each test starts with an empty cache. */
+export function clearWebApiCache(): void {
+  webApiCache.clear();
 }
 
 // ---------- Public functions used by the tools ----------

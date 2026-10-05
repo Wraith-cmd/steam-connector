@@ -200,7 +200,7 @@ export const MESSY_STEAM_ID = "76561198000000003";
 
 export const messyOwnedGames = {
   response: {
-    game_count: 14,
+    game_count: 15,
     games: [
       { appid: 4000, name: "Garry's Mod", playtime_forever: 64488, rtime_last_played: 1768089600 },
       // Old games where Steam sends a junk timestamp (about a day after 1970).
@@ -223,6 +223,8 @@ export const messyOwnedGames = {
       { appid: 2076040, name: "THE FINALS PLAYTEST", playtime_forever: 936, rtime_last_played: 1698796800 },
       { appid: 1829770, name: "MultiVersus – Technical Test", playtime_forever: 1002, rtime_last_played: 1653350400 },
       { appid: 3000001, name: "Project Nightfall", playtime_forever: 60, rtime_last_played: 1700000000 },
+      // A playtest that was never launched: not real backlog.
+      { appid: 2943730, name: "FragPunk Playtest", playtime_forever: 0, rtime_last_played: 0 },
       // Not a playtest, even though the name starts with "Play".
       { appid: 1721470, name: "Poppy Playtime", playtime_forever: 36, rtime_last_played: 1677888000 },
     ],
@@ -254,6 +256,7 @@ export const storeTypes: Record<number, number> = {
   2076040: 12,
   1829770: 0,
   3000001: 12,
+  2943730: 0,
   1721470: 0,
   620: 0,
   413150: 0,
