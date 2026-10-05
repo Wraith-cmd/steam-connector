@@ -150,7 +150,12 @@ describe("get_game_details", () => {
       coming_soon: false,
       price: "$1.99 (80% off, normally $9.99)",
       reviews: { summary: "Overwhelmingly Positive", percent_positive: 98, total_reviews: 1000 },
-      controller_support: "none listed",
+      controller_support: "none",
+      steam_deck: {
+        rating: "Verified",
+        notes: ["Default controller config fully functional", "Interface text is legible"],
+      },
+      pc_requirements: { minimum: null, recommended: null },
       store_url: "https://store.steampowered.com/app/620/",
     });
   });
@@ -164,9 +169,27 @@ describe("get_game_details", () => {
   it("caches store responses so repeat lookups don't hit Steam", async () => {
     const fetchMock = mockSteam();
     await callTool("get_game_details", { appid: 620 });
-    expect(fetchMock).toHaveBeenCalledTimes(2); // store page + reviews
+    expect(fetchMock).toHaveBeenCalledTimes(3); // store page + reviews + Steam Deck rating
     await callTool("get_game_details", { appid: 620 });
-    expect(fetchMock).toHaveBeenCalledTimes(2); // both served from the cache
+    expect(fetchMock).toHaveBeenCalledTimes(3); // all served from the cache
+  });
+
+  it("reads partial controller support from the categories, with Deck rating and PC requirements", async () => {
+    mockSteam();
+    const { data } = await callTool("get_game_details", { appid: 262060 });
+    expect(data.controller_support).toBe("partial");
+    expect(data.steam_deck).toEqual({ rating: "Unknown", notes: [] });
+    expect(data.pc_requirements).toEqual({
+      minimum: "OS: Windows 7+; Processor: 2.0 GHz; Memory: 4 GB RAM; Graphics: 512MB VRAM & up",
+      recommended: "OS: Windows 10; Memory: 8 GB RAM",
+    });
+  });
+
+  it("reads full controller support from the categories and handles games with no requirements", async () => {
+    mockSteam();
+    const { data } = await callTool("get_game_details", { appid: 346110 });
+    expect(data.controller_support).toBe("full");
+    expect(data.pc_requirements).toEqual({ minimum: null, recommended: null });
   });
 
   it("still returns details when the review lookup fails", async () => {

@@ -36,5 +36,7 @@ describe("unixToDate", () => {
 describe("decodeEntities", () => {
   it("decodes common HTML entities", () => {
     expect(decodeEntities("&quot;Hi&quot; &amp; it&#39;s &lt;3&gt;")).toBe(`"Hi" & it's <3>`);
+    expect(decodeEntities("A&nbsp;B &#169; &#x2122;")).toBe("A B \u00A9 \u2122");
+    expect(decodeEntities("bad &#99999999; code")).toBe("bad  code");
   });
 });
