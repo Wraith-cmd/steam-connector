@@ -7,9 +7,7 @@
 // games are "Unsupported" on Deck only because of Linux or anti-cheat issues, and
 // run fine on a Windows handheld, so the verdict treats that case separately.
 
-import type { DeckRating } from "./store.js";
-
-export type ControllerSupport = "full" | "partial" | "none";
+import type { ControllerSupport, DeckRating } from "./store.js";
 
 export type HandheldVerdict = {
   rating: "Great" | "Good" | "Playable with tweaks" | "Likely fine on Windows handhelds" | "Not handheld friendly" | "Unknown";

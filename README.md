@@ -12,7 +12,7 @@ This is a small **remote MCP server**. MCP (Model Context Protocol) is the stand
 | --- | --- |
 | `get_owned_games` | Every game you own: name, appid, total hours, hours in the last 2 weeks, and last played date, sorted by most played. Also counts games you've never played. Software like Soundpad or Wallpaper Engine is left out unless you ask for it (`include_software`), and playtests are marked `is_playtest`. |
 | `get_recently_played` | Games you've played in the last 2 weeks, with hours. |
-| `get_game_details` | A game's genres, categories (Single-player, Co-op, …), short description, release date, current price, user review score, and controller support. |
+| `get_game_details` | A game's genres, categories (Single-player, Co-op, …), short description, release date, current price, user review score, controller support (full / partial / none), Steam Deck rating with Valve's test notes, and minimum and recommended PC requirements as plain text. |
 | `check_handheld_compatibility` | How well games play on a handheld PC like the **ROG Ally**, Legion Go, MSI Claw, or Steam Deck. Combines Valve's Steam Deck rating with controller support (up to 10 games at a time). |
 | `get_achievement_progress` | How close you are to **100% achievements** in a game, with the locked achievements sorted easiest first. |
 | `get_wishlist` | Your wishlist, top-ranked first, with current prices and which games are **on sale**. |

@@ -71,12 +71,22 @@ export function gameName(name: string | undefined, appid: number): string {
   return cleanText(name, 100) || `App ${appid}`;
 }
 
-/** Store descriptions sometimes contain HTML entities like &quot;. Decode the common ones. */
+/**
+ * Store text sometimes contains HTML entities like &quot; or &#169;. Decode the common ones.
+ * Run cleanText afterwards: a numeric entity could decode to an invisible character.
+ */
 export function decodeEntities(text: string): string {
   return text
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#(\d+);/g, (_, code) => safeCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code) => safeCodePoint(parseInt(code, 16)))
     .replace(/&quot;/g, '"')
     .replace(/&#39;|&apos;/g, "'")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&");
+}
+
+function safeCodePoint(code: number): string {
+  return Number.isInteger(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "";
 }

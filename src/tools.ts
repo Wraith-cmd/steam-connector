@@ -20,7 +20,15 @@ import {
   getRecentlyPlayedGames,
   getWishlist,
 } from "./steam.js";
-import { type AppDetails, getAppDetails, getDeckRating, getReviewSummary } from "./store.js";
+import {
+  type AppDetails,
+  controllerSupport,
+  type DeckRating,
+  getAppDetails,
+  getDeckRating,
+  getReviewSummary,
+  pcRequirements,
+} from "./store.js";
 
 const appidInput = z.coerce.number().int().positive();
 
@@ -164,7 +172,8 @@ export function registerTools(server: McpServer): void {
       title: "Get game details",
       description:
         "Look up a game's Steam store page by appid: genres, categories (like Single-player or Co-op), " +
-        "short description, release date, current price, user review score, and controller support. " +
+        "short description, release date, current price, user review score, controller support, " +
+        "Steam Deck rating with Valve's test notes, and minimum and recommended PC requirements. " +
         "Get appids from get_owned_games or get_recently_played.",
       inputSchema: z.object({
         appid: appidInput.describe("The game's Steam appid, for example 620 for Portal 2."),
@@ -181,8 +190,8 @@ export function registerTools(server: McpServer): void {
           );
         }
 
-        // Reviews are a bonus: if that lookup fails, still return the rest of the details.
-        const reviews = await getReviewSummary(appid).catch(() => undefined);
+        // Reviews and the Deck rating are a bonus: if a lookup fails, still return the rest.
+        const [reviews, deck] = await Promise.all([getReviewSummary(appid).catch(() => undefined), deckRatingOrUnknown(appid)]);
 
         return jsonResult({
           appid: details.steam_appid,
@@ -195,7 +204,9 @@ export function registerTools(server: McpServer): void {
           coming_soon: details.release_date?.coming_soon ?? false,
           price: describePrice(details),
           reviews: reviews === undefined ? "unavailable right now" : (reviews ?? "no reviews yet"),
-          controller_support: details.controller_support ?? "none listed",
+          controller_support: controllerSupport(details),
+          steam_deck: { rating: DECK_LABELS[deck.category], notes: deck.notes },
+          pc_requirements: pcRequirements(details),
           store_url: `https://store.steampowered.com/app/${details.steam_appid}/`,
         });
       } catch (error) {
@@ -260,12 +271,9 @@ export function registerTools(server: McpServer): void {
           const details = await getAppDetails(appid);
           if (!details) return { appid, error: "No Steam store page for this appid." };
 
-          // The Steam Deck rating comes from an unofficial endpoint; if it fails, judge on controller support alone.
-          const deck = await getDeckRating(appid).catch(() => ({
-            category: 0 as const,
-            notes: ["Steam Deck rating unavailable right now"],
-          }));
-          const controller = details.controller_support ?? "none";
+          // If the Deck rating can't be fetched, judge on controller support alone.
+          const deck = await deckRatingOrUnknown(appid);
+          const controller = controllerSupport(details);
           const verdict = handheldVerdict(deck, controller, details.platforms?.windows ?? true);
           return {
             appid,
@@ -493,6 +501,11 @@ function describeGame(game: OwnedGame, kinds: AppKinds) {
     last_played: lastPlayed,
     ...appFlags(game.appid, name, kinds),
   };
+}
+
+/** The Steam Deck rating, or "Unknown" if it can't be fetched (it comes from an unofficial endpoint). */
+function deckRatingOrUnknown(appid: number): Promise<DeckRating> {
+  return getDeckRating(appid).catch(() => ({ category: 0 as const, notes: ["Steam Deck rating unavailable right now"] }));
 }
 
 /** True if Steam has any sign the game was ever launched. */
