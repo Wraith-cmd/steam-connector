@@ -191,7 +191,7 @@ export function registerTools(server: McpServer): void {
           short_description: cleanText(decodeEntities(details.short_description ?? "")),
           genres: details.genres?.map((genre) => genre.description) ?? [],
           categories: details.categories?.map((category) => category.description) ?? [],
-          release_date: details.release_date?.date || "unknown",
+          release_date: cleanText(details.release_date?.date, 40) || "unknown",
           coming_soon: details.release_date?.coming_soon ?? false,
           price: describePrice(details),
           reviews: reviews === undefined ? "unavailable right now" : (reviews ?? "no reviews yet"),
@@ -229,7 +229,7 @@ export function registerTools(server: McpServer): void {
 
         return jsonResult({
           steam_id: steamId,
-          display_name: cleanText(player.personaname),
+          display_name: cleanText(player.personaname, 64),
           profile_url: player.profileurl,
           profile_public: profilePublic,
           game_details_public: gameDetailsPublic,
@@ -256,7 +256,7 @@ export function registerTools(server: McpServer): void {
     },
     async ({ appids }) => {
       try {
-        const games = await mapLimited(appids, 5, async (appid) => {
+        const games = await mapLimited([...new Set(appids)], 5, async (appid) => {
           const details = await getAppDetails(appid);
           if (!details) return { appid, error: "No Steam store page for this appid." };
 
@@ -314,7 +314,7 @@ export function registerTools(server: McpServer): void {
         const locked = result.achievements
           .filter((achievement) => achievement.achieved !== 1)
           .map((achievement) => ({
-            name: cleanText(achievement.name) || achievement.apiname,
+            name: cleanText(achievement.name, 100) || cleanText(achievement.apiname, 100),
             description: cleanText(achievement.description) || "(hidden achievement)",
             percent_of_players_who_have_it: rarity.has(achievement.apiname)
               ? Math.round(rarity.get(achievement.apiname)! * 10) / 10

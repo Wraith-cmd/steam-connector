@@ -14,9 +14,10 @@ export class FriendlyError extends Error {
 /** Remove the Steam API key and MCP secret from any text before it is shown or logged. */
 export function redactSecrets(text: string): string {
   let safe = text;
-  for (const secret of [process.env.STEAM_API_KEY, process.env.MCP_SECRET]) {
+  // Trim to match how the values are actually used (a pasted value may carry spaces or a line break).
+  for (const secret of [process.env.STEAM_API_KEY?.trim(), process.env.MCP_SECRET?.trim()]) {
     // Skip very short values: replacing e.g. "k" everywhere would mangle the message.
-    // (Real Steam keys are 32 characters, and MCP_SECRET must be at least 16.)
+    // (Real Steam keys are 32 characters, and MCP_SECRET must be at least 32.)
     if (secret && secret.length >= 8) safe = safe.split(secret).join("[redacted]");
   }
   // Belt and braces: also hide anything that looks like "key=..." in a URL.
