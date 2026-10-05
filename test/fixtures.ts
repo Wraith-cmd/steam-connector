@@ -304,3 +304,22 @@ export const arkDetails = {
     },
   },
 };
+
+// Team Fortress 2: partial controller support appears only in the categories (real store data).
+export const tf2Details = {
+  "440": {
+    success: true,
+    data: {
+      type: "game",
+      name: "Team Fortress 2",
+      steam_appid: 440,
+      is_free: true,
+      categories: [
+        { id: 1, description: "Multi-player" },
+        { id: 18, description: "Partial Controller Support" },
+        { id: 8, description: "Valve Anti-Cheat enabled" },
+      ],
+      platforms: { windows: true, mac: false, linux: true },
+    },
+  },
+};

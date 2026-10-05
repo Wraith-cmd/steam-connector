@@ -63,6 +63,7 @@ export function mockSteam(options: Options = {}) {
         const appid = params.get("appids") ?? "";
         if (appid === "620") return json(fx.portal2Details);
         if (appid === "262060") return json(fx.darkestDungeonDetails);
+        if (appid === "440") return json(fx.tf2Details);
         if (appid === "346110") return json(fx.arkDetails);
         return json({ [appid]: fx.moreAppDetails[appid] ?? { success: false } });
       }
