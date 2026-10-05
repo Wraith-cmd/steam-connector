@@ -1,0 +1,92 @@
+import { describe, expect, it, vi } from "vitest";
+import { handleRequest } from "../api/mcp.js";
+import { getSecretFromRequest, isValidSecret } from "../src/secret.js";
+
+const SECRET = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6";
+
+describe("isValidSecret", () => {
+  it("accepts the right secret", () => {
+    expect(isValidSecret(SECRET, SECRET)).toBe(true);
+  });
+
+  it("rejects a wrong secret, including one that is almost right", () => {
+    expect(isValidSecret("wrong", SECRET)).toBe(false);
+    expect(isValidSecret(SECRET.slice(0, -1) + "x", SECRET)).toBe(false);
+    expect(isValidSecret(SECRET + "extra", SECRET)).toBe(false);
+  });
+
+  it("rejects a missing secret", () => {
+    expect(isValidSecret(undefined, SECRET)).toBe(false);
+    expect(isValidSecret("", SECRET)).toBe(false);
+  });
+
+  it("rejects everything when MCP_SECRET is not set", () => {
+    expect(isValidSecret("anything", undefined)).toBe(false);
+    expect(isValidSecret("", "")).toBe(false);
+  });
+
+  it("rejects everything when MCP_SECRET is too short to be safe", () => {
+    expect(isValidSecret("short", "short")).toBe(false);
+  });
+});
+
+describe("getSecretFromRequest", () => {
+  const secretOf = (url: string) => getSecretFromRequest(new Request(url));
+
+  it("reads the secret from the /mcp/<secret> path", () => {
+    expect(secretOf(`https://app.vercel.app/mcp/${SECRET}`)).toBe(SECRET);
+    expect(secretOf(`https://app.vercel.app/mcp/${SECRET}/`)).toBe(SECRET);
+  });
+
+  it("reads the secret from the query string added by the Vercel rewrite", () => {
+    expect(secretOf(`https://app.vercel.app/api/mcp?secret=${SECRET}`)).toBe(SECRET);
+  });
+
+  it("returns undefined when there is no secret", () => {
+    expect(secretOf("https://app.vercel.app/mcp")).toBeUndefined();
+    expect(secretOf("https://app.vercel.app/api/mcp")).toBeUndefined();
+    expect(secretOf(`https://app.vercel.app/mcp/${SECRET}/extra`)).toBeUndefined();
+  });
+
+  it("returns undefined for malformed encoding instead of crashing", () => {
+    expect(secretOf("https://app.vercel.app/mcp/%E0%A4%A")).toBeUndefined();
+  });
+});
+
+describe("handleRequest secret check", () => {
+  const post = (url: string) =>
+    handleRequest(
+      new Request(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      }),
+    );
+
+  it("returns 404 for a wrong or missing secret", async () => {
+    vi.stubEnv("MCP_SECRET", SECRET);
+    expect((await post("https://app.vercel.app/mcp/wrong-secret-wrong-secret")).status).toBe(404);
+    expect((await post("https://app.vercel.app/api/mcp")).status).toBe(404);
+    expect((await post("https://app.vercel.app/mcp")).status).toBe(404);
+  });
+
+  it("returns 404 for everyone when MCP_SECRET is not configured", async () => {
+    vi.stubEnv("MCP_SECRET", "");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect((await post("https://app.vercel.app/mcp/anything-at-all-here")).status).toBe(404);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it("lets the request through with the right secret", async () => {
+    vi.stubEnv("MCP_SECRET", SECRET);
+    const response = await post(`https://app.vercel.app/mcp/${SECRET}`);
+    expect(response.status).toBe(200);
+  });
+
+  it("does not reveal the secret in the 404 body", async () => {
+    vi.stubEnv("MCP_SECRET", SECRET);
+    const body = await (await post("https://app.vercel.app/mcp/nope-nope-nope-nope")).text();
+    expect(body).not.toContain(SECRET);
+  });
+});
