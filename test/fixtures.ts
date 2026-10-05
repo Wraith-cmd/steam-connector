@@ -260,3 +260,47 @@ export const storeTypes: Record<number, number> = {
   1145360: 0,
   105600: 0,
 };
+
+// Darkest Dungeon: partial controller support appears only in the categories,
+// and the PC requirements come as HTML, like the real store response.
+export const darkestDungeonDetails = {
+  "262060": {
+    success: true,
+    data: {
+      type: "game",
+      name: "Darkest Dungeon®",
+      steam_appid: 262060,
+      is_free: false,
+      categories: [
+        { id: 2, description: "Single-player" },
+        { id: 18, description: "Partial Controller Support" },
+      ],
+      platforms: { windows: true, mac: true, linux: true },
+      pc_requirements: {
+        minimum:
+          '<strong>Minimum:</strong><br><ul class="bb_ul"><li><strong>OS:</strong> Windows 7+<br></li>' +
+          "<li><strong>Processor:</strong> 2.0 GHz<br></li><li><strong>Memory:</strong> 4 GB RAM<br></li>" +
+          "<li><strong>Graphics:</strong> 512MB VRAM&nbsp;&amp; up</li></ul>",
+        recommended:
+          '<strong>Recommended:</strong><br><ul class="bb_ul"><li><strong>OS:</strong> Windows 10<br></li>' +
+          "<li><strong>Memory:</strong> 8 GB RAM</li></ul>",
+      },
+      price_overview: { initial: 2499, final: 374, discount_percent: 85, initial_formatted: "$24.99", final_formatted: "$3.74" },
+    },
+  },
+};
+
+// ARK: full controller support listed only as a category (lowercase "controller").
+export const arkDetails = {
+  "346110": {
+    success: true,
+    data: {
+      type: "game",
+      name: "ARK: Survival Evolved",
+      steam_appid: 346110,
+      categories: [{ id: 28, description: "Full controller support" }],
+      platforms: { windows: true },
+      pc_requirements: [],
+    },
+  },
+};
