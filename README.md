@@ -31,9 +31,26 @@ If you don't give a profile, your own (`STEAM_ID`) is used.
 ### Reading the numbers
 
 - **Hours** are always numbers, rounded to one decimal (two decimals under 0.1, so 2 minutes shows as `0.03`). `briefly_played: true` marks games that were opened for only a few minutes, including ones where Steam recorded 0 minutes but has a last-played date.
-- **Last played** is a date, `"unknown"` (you played it, but Steam has no date, which is common for older games), or `"never"`.
+- **Last played** is a `YYYY-MM-DD` date, `"unknown"` (you played it, but Steam has no date, which is common for older games), or `"never"`. Dates are in UTC unless you set `STEAM_TIMEZONE` (see [Optional settings](#optional-settings)), so a late-evening session in the Americas can otherwise show up as the next day.
 - **Software and tools** (Soundpad, Wallpaper Engine, GPU utilities, game-making kits) are hidden from `get_owned_games` by default so they don't skew your totals. `software_count` always says how many software apps your library has, `software_included` says whether they're in the list and totals, and `include_software: true` brings them back, marked `is_software`. Detection uses Steam's own app types, looked up in batches of 100 and remembered for a day.
-- **Playtests** (like "THE FINALS PLAYTEST" or "MultiVersus – Technical Test") are kept but marked `is_playtest: true`.
+- **Playtests** (like "THE FINALS PLAYTEST" or "MultiVersus – Technical Test") are kept but marked `is_playtest: true` and counted in `playtest_count`. An unplayed playtest isn't real backlog, so it doesn't count toward `never_played_count`.
+- **Editions and duplicates:** Steam lists some games more than once (GTA V Legacy and Enhanced, Metro Exodus and its Enhanced Edition, a game's separate multiplayer entry, or a game plus its playtest). They're kept as separate entries, so keep this in mind when reading recommendations.
+
+#### `get_owned_games` field reference
+
+| Field | Meaning |
+| --- | --- |
+| `game_count` | Entries in the list (games only, unless `include_software` is true). `limit` doesn't change it. |
+| `total_hours` | Total playtime of those entries, calculated from Steam's raw minutes and then rounded to one decimal. |
+| `never_played_count` | Entries with no playtime and no last-played date, not counting playtests. |
+| `playtest_count` | Entries marked `is_playtest`. |
+| `software_count` | Software and tools in the library, whether or not they're included. |
+| `software_included` | `true` when software is in the list and the totals (`include_software: true`). |
+| `showing` | How many entries are in `games` (smaller than `game_count` when `limit` is set). |
+| `games[].hours_total`, `hours_last_2_weeks` | Hours as numbers; two decimals under 0.1 hours. |
+| `games[].last_played` | `YYYY-MM-DD`, `"unknown"` or `"never"`. |
+| `games[].briefly_played` | Only present (as `true`) when the game was opened for just a few minutes. |
+| `games[].is_playtest`, `games[].is_software` | Only present (as `true`) for playtests and software. |
 
 All tools are read-only. Nothing can change your Steam account.
 
@@ -165,6 +182,7 @@ That's it. Try one of the prompts below.
 | Variable | What it does | Default |
 | --- | --- | --- |
 | `STEAM_COUNTRY` | Two-letter country code for store prices, for example `gb`, `de`, `ca`. | `us` |
+| `STEAM_TIMEZONE` | Timezone for "last played" dates, as an [IANA name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) like `America/Denver` (Mountain Time) or `Europe/London`. | `UTC` |
 
 To add one, open your Vercel project → **Settings → Environment Variables**, add it, and then **redeploy**. Environment variable changes only apply to new deployments.
 
@@ -189,7 +207,7 @@ To add one, open your Vercel project → **Settings → Environment Variables**,
 - The API key and secret are read from environment variables and are never included in tool output or error messages. The code doesn't log them either; refused requests log only the reason and lengths.
 - Vercel's own request logs, visible only to people on your Vercel team, record request paths. Because the secret is part of the path, it appears there.
 - Secrets live only in Vercel's environment variables. `.env` files are ignored by git and by Vercel uploads (`.vercelignore`), and `.env.example` contains placeholders only.
-- **Limits:** each request can run for at most 60 seconds, batched requests are refused, and only `public/robots.txt` is served as a static file.
+- **Limits:** each request can run for at most 60 seconds, batched requests are refused, and only `public/robots.txt` is served as a static file. Each server instance also handles at most 120 requests a minute, and Steam answers are cached briefly (2 minutes for your library, 1 hour for store pages), so repeat questions don't hit Steam again. For a strict limit, add a rate-limiting rule under your Vercel project's **Firewall**.
 - **Text from other people:** game names, descriptions, achievement text and display names are written by Steam users and developers. The server strips invisible characters, caps their length, and tells Claude to treat them as data, not instructions.
 
 ## Run it locally (optional)
@@ -220,6 +238,7 @@ src/store.ts      Calls to the Steam store (details, reviews, Steam Deck ratings
 src/handheld.ts   Decides how well a game suits a handheld PC like the ROG Ally
 src/classify.ts   Tells games apart from software and playtests
 src/http.ts       Fetches from Steam and turns failures into friendly errors
+src/ratelimit.ts  A simple requests-per-minute limit
 src/profile.ts    Turns "profile" input (ID, link, or name) into a SteamID64
 src/secret.ts     The URL secret check
 src/errors.ts     Friendly errors and secret redaction
