@@ -35,12 +35,33 @@ export function isBrieflyPlayed(minutes: number | undefined, wasOpened = false):
 const FIRST_VALID_TIMESTAMP = Date.UTC(2004, 0, 1) / 1000;
 
 /**
+ * The timezone dates are shown in: the STEAM_TIMEZONE setting (an IANA name like
+ * "America/Denver"), or UTC if it's missing or not a real timezone.
+ */
+export function dateTimeZone(): string {
+  const zone = process.env.STEAM_TIMEZONE?.trim();
+  if (!zone) return "UTC";
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone: zone });
+    return zone;
+  } catch {
+    return "UTC";
+  }
+}
+
+/**
  * Steam reports dates as Unix timestamps (seconds since 1970).
- * Convert to a "YYYY-MM-DD" string, or null if the timestamp is missing or junk.
+ * Convert to a "YYYY-MM-DD" date in dateTimeZone(), or null if the timestamp is missing or junk.
  */
 export function unixToDate(seconds: number | undefined): string | null {
   if (!seconds || seconds < FIRST_VALID_TIMESTAMP) return null;
-  return new Date(seconds * 1000).toISOString().slice(0, 10);
+  // The "en-CA" locale formats dates as YYYY-MM-DD.
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: dateTimeZone(),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(seconds * 1000));
 }
 
 /**

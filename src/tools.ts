@@ -71,10 +71,13 @@ export function registerTools(server: McpServer): void {
       description:
         "List every game in a Steam library with total hours, hours in the last 2 weeks, and the last played " +
         "date, sorted by total hours (most played first). Also reports how many games have never been played. " +
-        "Hours are numbers; briefly_played: true marks games opened for only a few minutes. " +
-        'last_played is a date, "unknown" (played, but Steam has no date), or "never". Software such as ' +
-        "Soundpad or Wallpaper Engine is left out unless include_software is true; software_count always says " +
-        "how many software apps the library has. Playtests are marked is_playtest. " +
+        "Hours are numbers (two decimals under 0.1); briefly_played: true marks games opened for only a few " +
+        'minutes. last_played is a YYYY-MM-DD date in the server\'s timezone, "unknown" (played, but Steam has ' +
+        'no date), or "never". Software such as Soundpad or Wallpaper Engine is left out unless ' +
+        "include_software is true; software_count always says how many software apps the library has and " +
+        "software_included says whether they're in the list and totals. Playtests are marked is_playtest and " +
+        "counted in playtest_count; never_played_count leaves them out. briefly_played, is_playtest and " +
+        "is_software only appear when true. " +
         "Use this to understand someone's taste and backlog before recommending what to play.",
       inputSchema: z.object({
         profile: profileInput,
@@ -116,7 +119,9 @@ export function registerTools(server: McpServer): void {
         return jsonResult({
           steam_id: steamId,
           game_count: visible.length,
-          never_played_count: list.filter((game) => game.last_played === "never").length,
+          // An unplayed playtest isn't real backlog, so it doesn't count as "never played".
+          never_played_count: list.filter((game) => game.last_played === "never" && !game.is_playtest).length,
+          playtest_count: list.filter((game) => game.is_playtest).length,
           total_hours: minutesToHours(totalMinutes),
           software_count: games.filter((game) => kinds.isSoftware(game.appid)).length,
           software_included: include_software === true,

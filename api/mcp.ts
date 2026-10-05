@@ -7,6 +7,7 @@
 // looks like it doesn't exist to anyone who doesn't know the URL.
 
 import { createMcpHandler } from "mcp-handler";
+import { allowRequest } from "../src/ratelimit.js";
 import { describeRejection, getSecretFromRequest, isValidSecret } from "../src/secret.js";
 import { registerTools } from "../src/tools.js";
 
@@ -30,6 +31,13 @@ export async function handleRequest(request: Request): Promise<Response> {
     // Tell the server owner why (in Vercel's logs) without revealing anything to callers.
     console.warn(`Refused request with 404: ${describeRejection(provided, expected)}`);
     return new Response("Not Found", { status: 404 });
+  }
+
+  if (!allowRequest()) {
+    return Response.json(
+      { jsonrpc: "2.0", id: null, error: { code: -32000, message: "Too many requests. Please wait a minute and try again." } },
+      { status: 429, headers: { "Retry-After": "60" } },
+    );
   }
 
   // Refuse JSON-RPC batches (a list of many calls in one request). Claude doesn't use them, and

@@ -108,7 +108,7 @@ describe("get_owned_games data quality", () => {
     expect(names).not.toContain("Wallpaper Engine"); // not in the store lookup, caught by the fallback list
     expect(data.software_count).toBe(3);
     expect(data.software_included).toBe(false);
-    expect(data.game_count).toBe(11);
+    expect(data.game_count).toBe(12);
     // 64488+1488+2+0+0+102+348+936+1002+60+36 = 68,462 minutes = 1141.0 hours (without software)
     expect(data.total_hours).toBe(1141);
     expect(data.note).toBeUndefined();
@@ -117,7 +117,7 @@ describe("get_owned_games data quality", () => {
   it("includes software, flagged, when include_software is true", async () => {
     const data = await callTool("get_owned_games", { include_software: true });
     const games = byName(data.games);
-    expect(data.game_count).toBe(14);
+    expect(data.game_count).toBe(15);
     expect(data.software_count).toBe(3); // same field, same value, whichever way you ask
     expect(data.software_included).toBe(true);
     expect(games["Soundpad"].is_software).toBe(true);
@@ -154,7 +154,9 @@ describe("get_owned_games data quality", () => {
 
   it("only counts truly unplayed games as never played", async () => {
     const data = await callTool("get_owned_games");
-    expect(data.never_played_count).toBe(1); // Titanfall 2; Battlefront II was opened
+    // Titanfall 2 only: Battlefront II was opened, and the unplayed FragPunk Playtest isn't backlog.
+    expect(data.never_played_count).toBe(1);
+    expect(data.playtest_count).toBe(4); // THE FINALS, MultiVersus, Project Nightfall, FragPunk
   });
 
   it("cleans up names", async () => {
