@@ -22,4 +22,21 @@ describe("Vercel project layout", () => {
     const config = JSON.parse(readFileSync("vercel.json", "utf8"));
     expect(config.framework).toBeNull();
   });
+
+  it("only publishes the public/ folder as static files, not the source code", () => {
+    const config = JSON.parse(readFileSync("vercel.json", "utf8"));
+    expect(config.outputDirectory).toBe("public");
+    expect(existsSync("public/robots.txt")).toBe(true);
+  });
+
+  it("caps how long one request can run", () => {
+    const config = JSON.parse(readFileSync("vercel.json", "utf8"));
+    expect(config.functions["api/mcp.ts"].maxDuration).toBeLessThanOrEqual(60);
+  });
+
+  it("never uploads local .env files with the Vercel CLI", () => {
+    const ignore = readFileSync(".vercelignore", "utf8").split("\n");
+    expect(ignore).toContain(".env");
+    expect(ignore).toContain(".env.*");
+  });
 });
