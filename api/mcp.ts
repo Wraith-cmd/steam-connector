@@ -7,7 +7,7 @@
 // looks like it doesn't exist to anyone who doesn't know the URL.
 
 import { createMcpHandler } from "mcp-handler";
-import { getSecretFromRequest, isValidSecret, MIN_SECRET_LENGTH } from "../src/secret.js";
+import { describeRejection, getSecretFromRequest, isValidSecret } from "../src/secret.js";
 import { registerTools } from "../src/tools.js";
 
 const mcpHandler = createMcpHandler(registerTools, {
@@ -19,13 +19,13 @@ const mcpHandler = createMcpHandler(registerTools, {
 });
 
 export async function handleRequest(request: Request): Promise<Response> {
-  const expected = process.env.MCP_SECRET;
-  if (!expected || expected.length < MIN_SECRET_LENGTH) {
-    // Tell the server owner (in Vercel's logs) without revealing anything to callers.
-    console.warn(`MCP_SECRET is missing or shorter than ${MIN_SECRET_LENGTH} characters; refusing all requests.`);
-  }
+  // Trim so a stray space or line break pasted into Vercel's settings doesn't lock you out.
+  const expected = process.env.MCP_SECRET?.trim();
+  const provided = getSecretFromRequest(request);
 
-  if (!isValidSecret(getSecretFromRequest(request), expected)) {
+  if (!isValidSecret(provided, expected)) {
+    // Tell the server owner why (in Vercel's logs) without revealing anything to callers.
+    console.warn(`Refused request with 404: ${describeRejection(provided, expected)}`);
     return new Response("Not Found", { status: 404 });
   }
   return mcpHandler(request);
