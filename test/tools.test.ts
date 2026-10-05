@@ -6,7 +6,7 @@ import { clearStoreCaches } from "../src/store.js";
 import { MY_STEAM_ID, PRIVATE_STEAM_ID } from "./fixtures.js";
 import { mockSteam, TEST_API_KEY } from "./mockSteam.js";
 
-const SECRET = "test-secret-0123456789abcdef";
+const SECRET = "test-secret-0123456789abcdef-0123456789";
 
 beforeEach(() => {
   vi.stubEnv("MCP_SECRET", SECRET);

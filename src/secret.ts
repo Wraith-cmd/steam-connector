@@ -4,7 +4,31 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
 /** Secrets shorter than this are rejected: they would be too easy to guess. */
-export const MIN_SECRET_LENGTH = 16;
+export const MIN_SECRET_LENGTH = 32;
+
+// Letters, numbers, "-" and "_" only, so the secret survives being put in a URL unchanged.
+const SECRET_CHARACTERS = /^[A-Za-z0-9_-]+$/;
+
+// Example values printed in this repo's docs. Anyone could find them, so never accept them.
+const PUBLISHED_EXAMPLES = new Set([
+  "replace-me-with-a-long-random-string",
+  "3f9c1e7a0b5d4c2e8f6a9b1c3d5e7f9a0b2c4d6e8f0a1b3c5d7e9f1a3b5c7d9",
+]);
+
+/** Why MCP_SECRET can't be used, or null if it's fine. Never includes the secret itself. */
+export function secretSettingProblem(expected: string | undefined): string | null {
+  if (!expected) return "MCP_SECRET is not set in Vercel. Add it, then redeploy.";
+  if (expected.length < MIN_SECRET_LENGTH) {
+    return `MCP_SECRET is only ${expected.length} characters; it must be at least ${MIN_SECRET_LENGTH}.`;
+  }
+  if (!SECRET_CHARACTERS.test(expected)) {
+    return 'MCP_SECRET may only contain letters, numbers, "-" and "_". Generate one with: openssl rand -hex 32';
+  }
+  if (PUBLISHED_EXAMPLES.has(expected)) {
+    return "MCP_SECRET is still the example value from the docs. Generate your own with: openssl rand -hex 32";
+  }
+  return null;
+}
 
 /**
  * Find the secret in the request. Vercel rewrites /mcp/<secret> to
@@ -27,11 +51,11 @@ export function getSecretFromRequest(request: Request): string | undefined {
  * time whether the guess is close or not (so timing can't leak the secret).
  */
 export function isValidSecret(provided: string | undefined, expected: string | undefined): boolean {
-  if (!expected || expected.length < MIN_SECRET_LENGTH) return false;
+  if (secretSettingProblem(expected) !== null) return false;
   if (!provided) return false;
   // Hashing both values gives equal-length buffers, which timingSafeEqual requires.
   const a = createHash("sha256").update(provided).digest();
-  const b = createHash("sha256").update(expected).digest();
+  const b = createHash("sha256").update(expected!).digest();
   return timingSafeEqual(a, b);
 }
 
@@ -40,13 +64,11 @@ export function isValidSecret(provided: string | undefined, expected: string | u
  * included, never the secrets themselves, so it is safe to log.
  */
 export function describeRejection(provided: string | undefined, expected: string | undefined): string {
-  if (!expected) return "MCP_SECRET is not set in Vercel. Add it, then redeploy.";
-  if (expected.length < MIN_SECRET_LENGTH) {
-    return `MCP_SECRET is only ${expected.length} characters; it must be at least ${MIN_SECRET_LENGTH}.`;
-  }
+  const settingProblem = secretSettingProblem(expected);
+  if (settingProblem) return settingProblem;
   if (!provided) return "the URL has no secret. The connector URL must end in /mcp/<MCP_SECRET>.";
   return (
     `the secret in the URL doesn't match MCP_SECRET ` +
-    `(URL secret: ${provided.length} characters, MCP_SECRET: ${expected.length} characters).`
+    `(URL secret: ${provided.length} characters, MCP_SECRET: ${expected!.length} characters).`
   );
 }

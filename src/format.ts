@@ -52,20 +52,23 @@ export function lastPlayedLabel(playtimeMinutes: number | undefined, lastPlayed:
 
 /**
  * Clean text that comes from Steam (game names, display names, descriptions):
- * remove invisible characters, collapse runs of whitespace, and trim. "Yu-Gi-Oh!  Master Duel " -> "Yu-Gi-Oh! Master Duel"
+ * remove invisible characters, collapse runs of whitespace, trim, and cap the length.
+ *   "Yu-Gi-Oh!  Master Duel " -> "Yu-Gi-Oh! Master Duel"
  */
-export function cleanText(text: string | undefined): string {
-  return (text ?? "")
+export function cleanText(text: string | undefined, maxLength = 300): string {
+  const cleaned = (text ?? "")
     // Control characters, zero-width and text-direction marks, and invisible Unicode "tag"
     // characters (U+E0000–E007F), which can be used to hide instructions in names.
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F​-‏‪-‮⁦-⁩﻿]|[\u{E0000}-\u{E007F}]/gu, "")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]|[\u{E0000}-\u{E007F}]/gu, "")
     .replace(/\s+/g, " ")
     .trim();
+  // Cap the length: this text comes from strangers, and nobody needs a 5,000-character "name".
+  return cleaned.length > maxLength ? `${cleaned.slice(0, maxLength - 1)}…` : cleaned;
 }
 
 /** A game's display name, cleaned, falling back to "App <id>" when Steam has none. */
 export function gameName(name: string | undefined, appid: number): string {
-  return cleanText(name) || `App ${appid}`;
+  return cleanText(name, 100) || `App ${appid}`;
 }
 
 /** Store descriptions sometimes contain HTML entities like &quot;. Decode the common ones. */
