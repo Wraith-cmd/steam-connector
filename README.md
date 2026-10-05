@@ -10,7 +10,7 @@ This is a small **remote MCP server**. MCP (Model Context Protocol) is the stand
 
 | Tool | What it returns |
 | --- | --- |
-| `get_owned_games` | Every game you own: name, appid, total hours, hours in the last 2 weeks, and last played date, sorted by most played. Also counts games you've never played. |
+| `get_owned_games` | Every game you own: name, appid, total hours, hours in the last 2 weeks, and last played date, sorted by most played. Also counts games you've never played. Software like Soundpad or Wallpaper Engine is left out unless you ask for it (`include_software`), and playtests are marked `is_playtest`. |
 | `get_recently_played` | Games you've played in the last 2 weeks, with hours. |
 | `get_game_details` | A game's genres, categories (Single-player, Co-op, …), short description, release date, current price, user review score, and controller support. |
 | `check_handheld_compatibility` | How well games play on a handheld PC like the **ROG Ally**, Legion Go, MSI Claw, or Steam Deck. Combines Valve's Steam Deck rating with controller support (up to 10 games at a time). |
@@ -27,6 +27,13 @@ Every tool that reads a player's data takes an optional **profile**, so you can 
 - just the custom name: `gabelogannewell`
 
 If you don't give a profile, your own (`STEAM_ID`) is used.
+
+### Reading the numbers
+
+- **Hours** are rounded to one decimal. `"<0.1"` means the game was opened but played for only a few minutes.
+- **Last played** is a date, `"unknown"` (you played it, but Steam has no date, which is common for older games), or `"never"`.
+- **Software and tools** (Soundpad, Wallpaper Engine, GPU utilities, game-making kits) are hidden from `get_owned_games` by default so they don't skew your totals. `software_hidden_count` says how many were left out, and `include_software: true` brings them back, marked `is_software`. Detection uses Steam's own app types, looked up in batches of 100 and remembered for a day.
+- **Playtests** (like "THE FINALS PLAYTEST" or "MultiVersus – Technical Test") are kept but marked `is_playtest: true`.
 
 All tools are read-only. Nothing can change your Steam account.
 
@@ -205,11 +212,12 @@ src/tools.ts      The tools Claude can call
 src/steam.ts      Calls to the Steam Web API (your library, wishlist, achievements)
 src/store.ts      Calls to the Steam store (details, reviews, Steam Deck ratings), cached
 src/handheld.ts   Decides how well a game suits a handheld PC like the ROG Ally
+src/classify.ts   Tells games apart from software and playtests
 src/http.ts       Fetches from Steam and turns failures into friendly errors
 src/profile.ts    Turns "profile" input (ID, link, or name) into a SteamID64
 src/secret.ts     The URL secret check
 src/errors.ts     Friendly errors and secret redaction
-src/format.ts     Minutes → hours, timestamps → dates
+src/format.ts     Minutes → hours, timestamps → dates, tidy names
 src/cache.ts      A tiny in-memory cache (store lookups are cached for 1 hour)
 test/             Tests, with a fake Steam so they run offline
 vercel.json       Routes /mcp/<secret> to the function and pins the "Other" preset

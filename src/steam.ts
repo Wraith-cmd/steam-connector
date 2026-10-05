@@ -166,3 +166,29 @@ export async function getGlobalAchievementPercentages(appid: number): Promise<Ma
   }
   return percentages;
 }
+
+/**
+ * Each app's store type (6 = software, 12 = beta/playtest, 13 = tool; 0 = game),
+ * looked up in batches of 100 with IStoreBrowseService/GetItems. This endpoint
+ * doesn't need the API key, so we don't send it. Apps Steam has no store entry
+ * for are simply missing from the result.
+ */
+export async function getStoreItemTypes(appids: number[]): Promise<Map<number, number>> {
+  const types = new Map<number, number>();
+  for (let start = 0; start < appids.length; start += 100) {
+    const batch = appids.slice(start, start + 100);
+    const input = {
+      ids: batch.map((appid) => ({ appid })),
+      context: { language: "english", country_code: "US", steam_realm: 1 },
+      data_request: {},
+    };
+    const query = new URLSearchParams({ input_json: JSON.stringify(input) });
+    const data = (await fetchJson(`${WEB_API}/IStoreBrowseService/GetItems/v1/?${query}`, "Web API")) as {
+      response?: { store_items?: { appid?: number; type?: number }[] };
+    };
+    for (const item of data.response?.store_items ?? []) {
+      if (typeof item.appid === "number" && typeof item.type === "number") types.set(item.appid, item.type);
+    }
+  }
+  return types;
+}
